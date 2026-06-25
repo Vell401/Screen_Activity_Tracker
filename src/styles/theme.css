@@ -1,0 +1,111 @@
+/*
+ * Discord-inspired design tokens.
+ *
+ * Принцип отступления от самого Discord: данные/метрики рисуем с ПОВЫШЕННЫМ
+ * контрастом (используем --text-bright), а не наследуем низкоконтрастный
+ * серый текст интерфейса. Акцентный blurple — только для интерактивных
+ * элементов и ключевых KPI.
+ */
+:root {
+  /* Фоны (от тёмного к более светлому) */
+  --bg-app: #36393f; /* основной фон приложения */
+  --bg-panel: #2f3136; /* боковые панели, тулбары */
+  --bg-card: #292b2f; /* карточки, модульные блоки */
+  --bg-input: #202225; /* поля ввода */
+  --bg-hover: #3c3f45; /* hover на интерактивных элементах */
+  --bg-active: #4f545c; /* активное/нажатое состояние */
+
+  /* Текст */
+  --text-bright: #ffffff; /* метрики, числа, ключевые KPI — высокий контраст */
+  --text-normal: #dcddde; /* основной текст */
+  --text-muted: #96989d; /* подписи, второстепенное */
+  --text-link: #00aff4; /* ссылки */
+
+  /* Акценты */
+  --accent: #5865f2; /* blurple — основной акцент/интерактив */
+  --accent-hover: #4752c4;
+  --accent-soft: rgba(88, 101, 242, 0.15); /* фон активного пункта меню */
+
+  /* Семантика */
+  --success: #3ba55d;
+  --warning: #faa61a;
+  --danger: #ed4245;
+  --info: #00b0f4;
+
+  /* Границы и разделители */
+  --border-subtle: #202225;
+  --border-normal: #26282c;
+  --divider: rgba(255, 255, 255, 0.06);
+
+  /* Геометрия */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Тени */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  /* Шрифты */
+  --font-sans: "Segoe UI", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+}
+
+/* Reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-app);
+  color: var(--text-normal);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden; /* Tauri: окно не должно прокручиваться целиком */
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Scrollbar в стиле Discord */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-active);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6d6f78;
+}

@@ -1,0 +1,41 @@
+[package]
+name = "screen-activity-tracker"
+version = "0.1.0"
+description = "Локальный трекер активности за ПК"
+authors = ["Vell401"]
+edition = "2021"
+rust-version = "1.77"
+
+# https://doc.rust-lang.org/cargo/reference/manifest.html#the-default-run-field
+[lib]
+name = "screen_activity_tracker_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+
+# Сериализация для IPC-команд
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SQLite: bundled = линкуется статически, не требует системной libsqlite3
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Логирование
+log = "0.4"
+env_logger = "0.11"
+
+# Win32 API для capture engine
+# features перечислены явно — только то, что нужно, чтобы не раздувать билд
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }

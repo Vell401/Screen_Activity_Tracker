@@ -18,6 +18,45 @@
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
 }
 
+/* Чекбоксы-чипы детализации над таймлайном. */
+.tl-cats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.tl-cats__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+.tl-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-normal);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+.tl-cat:hover {
+  color: var(--text-normal);
+}
+.tl-cat--on {
+  color: var(--text-bright);
+  background: var(--bg-active);
+}
+.tl-cat__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 /* ============ Dashboard: «Сейчас» ============ */
 .now {
   display: flex;
@@ -140,13 +179,33 @@
 /* ============ Categories ============ */
 .cats__form {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1.6fr auto auto;
+  grid-template-columns: 1.4fr 1fr 1.6fr auto;
   gap: 12px;
   align-items: end;
+}
+.cats__catrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cats__catrow .select {
+  flex: 1;
+  min-width: 0;
+}
+.cats__newrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cats__newrow .input {
+  flex: 1;
+  min-width: 0;
 }
 .cats__f-actions {
   display: flex;
   gap: 8px;
+  grid-column: 1 / -1;
 }
 .cats__rowactions {
   display: flex;

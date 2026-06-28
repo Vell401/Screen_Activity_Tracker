@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/Card";
 import { useAppStore } from "@/stores/app";
 import { useAsyncData } from "@/lib/hooks";
+import { useT } from "@/lib/i18n";
 import { ensureAppIcon, getActivities, listCategoryRules } from "@/lib/tauri";
 import {
   appLabel,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/format";
 
 export function ActivityView() {
+  const t = useT();
   const range = useAppStore((s) => s.range);
   const refreshKey = useAppStore((s) => s.refreshKey);
 
@@ -70,13 +72,13 @@ export function ActivityView() {
   return (
     <div className="stack">
       <Card
-        title="Журнал активности"
-        subtitle={`${filtered.length} интервалов · ${formatDuration(totalMs)}`}
+        title={t("act.title")}
+        subtitle={t("act.subtitle", { n: filtered.length, dur: formatDuration(totalMs) })}
         actions={
           <div className="activity__filters">
             <input
               className="input activity__search"
-              placeholder="Поиск: приложение, домен, заголовок…"
+              placeholder={t("act.search")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -85,7 +87,7 @@ export function ActivityView() {
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
-              <option value="all">Все категории</option>
+              <option value="all">{t("act.allCats")}</option>
               {categories.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -96,7 +98,7 @@ export function ActivityView() {
               className={"btn btn--sm" + (hideIdle ? " btn--primary" : "")}
               onClick={() => setHideIdle((v) => !v)}
             >
-              {hideIdle ? "Простой скрыт" : "Скрыть простой"}
+              {hideIdle ? t("act.idleHidden") : t("act.hideIdle")}
             </button>
           </div>
         }
@@ -106,19 +108,17 @@ export function ActivityView() {
             <div className="spinner" />
           </div>
         ) : filtered.length === 0 ? (
-          <p className="chart-empty">
-            Ничего не найдено. Поработайте за ПК или ослабьте фильтры.
-          </p>
+          <p className="chart-empty">{t("act.empty")}</p>
         ) : (
           <div className="activity__tablewrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Время</th>
-                  <th>Длительность</th>
-                  <th>Приложение</th>
-                  <th>Домен / заголовок</th>
-                  <th>Категория</th>
+                  <th>{t("act.colTime")}</th>
+                  <th>{t("act.colDuration")}</th>
+                  <th>{t("act.colApp")}</th>
+                  <th>{t("act.colDomain")}</th>
+                  <th>{t("act.colCategory")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -131,9 +131,7 @@ export function ActivityView() {
                       {a.domain ? (
                         <span className="activity__domain">{a.domain}</span>
                       ) : (
-                        <span className="table__muted">
-                          {a.windowTitle ?? "—"}
-                        </span>
+                        <span className="table__muted">{a.windowTitle ?? "—"}</span>
                       )}
                     </td>
                     <td>
@@ -143,14 +141,13 @@ export function ActivityView() {
                             className="cat-dot"
                             style={{
                               background:
-                                catColor.get(a.categoryName) ??
-                                colorForKey(a.categoryName),
+                                catColor.get(a.categoryName) ?? colorForKey(a.categoryName),
                             }}
                           />
                           {a.categoryName}
                         </span>
                       ) : a.isIdle ? (
-                        <span className="badge badge--idle">простой</span>
+                        <span className="badge badge--idle">{t("badge.idle")}</span>
                       ) : (
                         <span className="table__muted">—</span>
                       )}
@@ -160,9 +157,7 @@ export function ActivityView() {
               </tbody>
             </table>
             {filtered.length > 500 && (
-              <p className="activity__more">
-                Показаны первые 500 из {filtered.length}. Уточните фильтры.
-              </p>
+              <p className="activity__more">{t("act.more", { n: filtered.length })}</p>
             )}
           </div>
         )}

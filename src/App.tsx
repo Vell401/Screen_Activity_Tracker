@@ -9,7 +9,8 @@ import { ExtensionView } from "@/views/ExtensionView";
 import { SettingsView } from "@/views/SettingsView";
 import { useAppStore } from "@/stores/app";
 import { useAsyncData } from "@/lib/hooks";
-import { RANGE_LABEL, type RangePreset } from "@/lib/format";
+import { useT, type Lang } from "@/lib/i18n";
+import type { RangePreset } from "@/lib/format";
 import {
   getExtensionStatus,
   getSettings,
@@ -17,38 +18,28 @@ import {
 } from "@/lib/tauri";
 import "./App.css";
 
-const TITLES: Record<string, string> = {
-  dashboard: "Дашборд",
-  activity: "Активность",
-  categories: "Категории",
-  extension: "Расширение",
-  settings: "Настройки",
-};
-
-const RANGE_OPTIONS: { value: RangePreset; label: string }[] = [
-  { value: "today", label: RANGE_LABEL.today },
-  { value: "week", label: RANGE_LABEL.week },
-  { value: "month", label: RANGE_LABEL.month },
-];
-
 export default function App() {
+  const t = useT();
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
   const range = useAppStore((s) => s.range);
   const setRange = useAppStore((s) => s.setRange);
+  const setLang = useAppStore((s) => s.setLang);
   const trackingEnabled = useAppStore((s) => s.trackingEnabled);
   const setTracking = useAppStore((s) => s.setTrackingEnabled);
   const bumpRefresh = useAppStore((s) => s.bumpRefresh);
 
-  // Синхронизируем флаг трекинга из БД при старте.
+  // Синхронизируем флаг трекинга и язык из БД при старте.
   useEffect(() => {
     getSettings()
       .then((entries) => {
-        const e = entries.find((x) => x.key === "tracking_enabled");
-        if (e) setTracking(e.value === "true" || e.value === "1");
+        const tr = entries.find((x) => x.key === "tracking_enabled");
+        if (tr) setTracking(tr.value === "true" || tr.value === "1");
+        const lng = entries.find((x) => x.key === "language");
+        if (lng && (lng.value === "en" || lng.value === "ru")) setLang(lng.value as Lang);
       })
       .catch(() => {});
-  }, [setTracking]);
+  }, [setTracking, setLang]);
 
   // Статус расширения — для индикатора в сайдбаре.
   const ext = useAsyncData(getExtensionStatus, [], 5000);
@@ -64,6 +55,19 @@ export default function App() {
     }
   };
 
+  const titles: Record<string, string> = {
+    dashboard: t("nav.dashboard"),
+    activity: t("nav.activity"),
+    categories: t("nav.categories"),
+    extension: t("nav.extension"),
+    settings: t("nav.settings"),
+  };
+  const rangeOptions: { value: RangePreset; label: string }[] = [
+    { value: "today", label: t("range.today") },
+    { value: "week", label: t("range.week") },
+    { value: "month", label: t("range.month") },
+  ];
+
   const showRange = view === "dashboard" || view === "activity";
 
   return (
@@ -76,19 +80,15 @@ export default function App() {
       />
       <main className="app__content">
         <header className="app__header">
-          <h1 className="app__heading">{TITLES[view]}</h1>
+          <h1 className="app__heading">{titles[view]}</h1>
           <div className="app__header-tools">
             {showRange && (
               <>
-                <Segmented
-                  value={range}
-                  options={RANGE_OPTIONS}
-                  onChange={setRange}
-                />
+                <Segmented value={range} options={rangeOptions} onChange={setRange} />
                 <button
                   className="btn btn--icon btn--ghost"
                   onClick={bumpRefresh}
-                  title="Обновить"
+                  title={t("header.refresh")}
                 >
                   <IconRefresh />
                 </button>
@@ -98,7 +98,7 @@ export default function App() {
             <Toggle
               checked={trackingEnabled}
               onChange={toggleTracking}
-              label={trackingEnabled ? "Трекинг вкл" : "Трекинг выкл"}
+              label={trackingEnabled ? t("header.trackingOn") : t("header.trackingOff")}
             />
           </div>
         </header>

@@ -2,45 +2,48 @@ import "./linechart.css";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-export interface LinePoint {
-  /** Подпись под точкой на оси X (час «14» или день «25.06»). */
+/** Одна серия (линия) графика — значения по общим точкам оси X. */
+export interface LineSeries {
+  key: string;
   label: string;
-  value: number;
-  /** Постоянно подсветить точку (например, текущий час). */
-  highlight?: boolean;
+  /** CSS-цвет линии (var(--chart-x) и т.п.). Для primary игнорируется (градиент). */
+  color: string;
+  /** Значения по точкам оси X (длина = xLabels.length). */
+  values: number[];
+  /** Основная линия: сине-фиолетовый градиент + заливка под кривой. */
+  primary?: boolean;
 }
 
 interface LineChartProps {
-  points: LinePoint[];
+  /** Одна или несколько серий с общей осью X. */
+  series: LineSeries[];
+  /** Подписи оси X (напр. «00:00» или «25 июн»). */
+  xLabels: string[];
   /** Форматтер значения для тултипа, напр. «2 ч 14 мин». */
   format: (v: number) => string;
+  /** Форматтер подписей оси Y (компактный). По умолчанию = format. */
+  yFormat?: (v: number) => string;
   emptyText?: string;
   /** Показывать каждую N-ю подпись оси X (чтобы не слипались). */
   labelEvery?: number;
   /** Высота области графика в px. */
   height?: number;
+  /** Индекс точки для постоянной подсветки (напр. текущий час). */
+  highlightIndex?: number;
 }
 
-/** Геометрия одной точки в координатах viewBox (= пиксели контейнера). */
-interface PlotPoint {
-  x: number;
-  y: number;
-  point: LinePoint;
-}
-
-/** Внутренние отступы, чтобы линия/точки не липли к краям. */
-const PAD_X = 10;
+/** Отступы: слева — место под подписи оси Y. */
+const PAD_LEFT = 46;
+const PAD_RIGHT = 12;
 const PAD_TOP = 16;
 const PAD_BOTTOM = 12;
-/** Количество горизонтальных линий сетки. */
 const GRID_LINES = 4;
 
 /**
- * Монотонная кубическая интерполяция (Fritsch–Carlson).
- * В отличие от Catmull-Rom не «выстреливает» за пределы значений: нет провалов
- * ниже базовой линии и лишних горбов на резких пиках — кривая ровная и красивая.
+ * Монотонная кубическая интерполяция (Fritsch–Carlson) — без овершута:
+ * нет провалов ниже базовой линии и лишних горбов. Работает по точкам {x,y}.
  */
-function smoothPath(pts: PlotPoint[]): string {
+function smoothPath(pts: { x: number; y: number }[]): string {
   const n = pts.length;
   if (n === 0) return "";
   if (n === 1) return `M ${pts[0].x} ${pts[0].y}`;
@@ -49,7 +52,6 @@ function smoothPath(pts: PlotPoint[]): string {
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);
 
-  // Секущие наклоны между соседними точками.
   const dx: number[] = [];
   const slope: number[] = [];
   for (let i = 0; i < n - 1; i++) {
@@ -58,16 +60,12 @@ function smoothPath(pts: PlotPoint[]): string {
     slope.push(h !== 0 ? (ys[i + 1] - ys[i]) / h : 0);
   }
 
-  // Касательные в точках.
   const m: number[] = new Array(n);
   m[0] = slope[0];
   m[n - 1] = slope[n - 2];
   for (let i = 1; i < n - 1; i++) {
-    // На локальных экстремумах/плато касательная = 0 → нет овершута.
     m[i] = slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2;
   }
-
-  // Ограничение монотонности (круг радиуса 3 в пространстве α,β).
   for (let i = 0; i < n - 1; i++) {
     if (slope[i] === 0) {
       m[i] = 0;
@@ -84,7 +82,6 @@ function smoothPath(pts: PlotPoint[]): string {
     }
   }
 
-  // Кубические кривые Безье из эрмитовых касательных.
   let d = `M ${xs[0]} ${ys[0]}`;
   for (let i = 0; i < n - 1; i++) {
     const h = dx[i];
@@ -97,18 +94,21 @@ function smoothPath(pts: PlotPoint[]): string {
   return d;
 }
 
-/** Плавный линейный график активности с заливкой под кривой. */
+/** Плавный мультилинейный график активности (с осью Y и заливкой под основной кривой). */
 export function LineChart({
-  points,
+  series,
+  xLabels,
   format,
+  yFormat,
   emptyText = "Нет данных",
   labelEvery = 1,
   height = 190,
+  highlightIndex,
 }: LineChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
-  // Ширину меряем по контейнеру: viewBox = пиксели 1:1 → без искажений stroke/кругов.
+  // Ширину меряем по контейнеру: viewBox = пиксели 1:1 → без искажений stroke.
   const [width, setWidth] = useState(600);
 
   useEffect(() => {
@@ -122,36 +122,16 @@ export function LineChart({
     return () => ro.disconnect();
   }, []);
 
-  const max = points.reduce((m, p) => Math.max(m, p.value), 0);
+  const ids = useMemo(() => {
+    const r = Math.random().toString(36).slice(2);
+    return { fill: `lc-fill-${r}`, stroke: `lc-stroke-${r}` };
+  }, []);
 
-  const gradId = useMemo(
-    () => `linechart-fill-${Math.random().toString(36).slice(2)}`,
-    [],
-  );
+  const n = xLabels.length;
+  let max = 0;
+  for (const s of series) for (const v of s.values) if (v > max) max = v;
 
-  // Геометрия точек в пиксельных координатах.
-  const plot = useMemo<PlotPoint[]>(() => {
-    if (points.length === 0 || max <= 0) return [];
-    const innerW = width - PAD_X * 2;
-    const innerH = height - PAD_TOP - PAD_BOTTOM;
-    const step = points.length > 1 ? innerW / (points.length - 1) : 0;
-    return points.map((point, i) => ({
-      x: PAD_X + (points.length > 1 ? step * i : innerW / 2),
-      y: PAD_TOP + innerH * (1 - point.value / max),
-      point,
-    }));
-  }, [points, max, height, width]);
-
-  const linePath = useMemo(() => smoothPath(plot), [plot]);
-  const areaPath = useMemo(() => {
-    if (plot.length === 0) return "";
-    const base = height - PAD_BOTTOM;
-    const first = plot[0];
-    const last = plot[plot.length - 1];
-    return `${linePath} L ${last.x} ${base} L ${first.x} ${base} Z`;
-  }, [linePath, plot, height]);
-
-  if (max <= 0) {
+  if (max <= 0 || n === 0) {
     return (
       <div className="linechart" ref={wrapRef}>
         <p className="chart-empty">{emptyText}</p>
@@ -159,18 +139,35 @@ export function LineChart({
     );
   }
 
+  const innerW = width - PAD_LEFT - PAD_RIGHT;
+  const innerH = height - PAD_TOP - PAD_BOTTOM;
+  const step = n > 1 ? innerW / (n - 1) : 0;
+  const xAt = (i: number) => PAD_LEFT + (n > 1 ? step * i : innerW / 2);
+  const yAt = (v: number) => PAD_TOP + innerH * (1 - v / max);
   const baseY = height - PAD_BOTTOM;
-  const active = hover !== null ? plot[hover] : null;
+  const yf = yFormat ?? format;
+
+  const plots = series.map((s) => {
+    const pts = s.values.map((v, i) => ({ x: xAt(i), y: yAt(v) }));
+    return { s, d: smoothPath(pts) };
+  });
+  const primary = plots.find((p) => p.s.primary) ?? plots[0];
+  const areaPath =
+    primary && n > 1
+      ? `${primary.d} L ${xAt(n - 1)} ${baseY} L ${xAt(0)} ${baseY} Z`
+      : "";
+
+  const colorOf = (s: LineSeries) => (s.primary ? "var(--accent)" : s.color);
 
   function handleMove(e: React.MouseEvent<SVGSVGElement>) {
     const svg = svgRef.current;
-    if (!svg || plot.length === 0) return;
+    if (!svg) return;
     const rect = svg.getBoundingClientRect();
     const vx = ((e.clientX - rect.left) / rect.width) * width;
     let nearest = 0;
     let best = Infinity;
-    for (let i = 0; i < plot.length; i++) {
-      const dist = Math.abs(plot[i].x - vx);
+    for (let i = 0; i < n; i++) {
+      const dist = Math.abs(xAt(i) - vx);
       if (dist < best) {
         best = dist;
         nearest = i;
@@ -178,6 +175,8 @@ export function LineChart({
     }
     setHover(nearest);
   }
+
+  const hi = hover;
 
   return (
     <div className="linechart" ref={wrapRef}>
@@ -192,76 +191,133 @@ export function LineChart({
         onMouseLeave={() => setHover(null)}
       >
         <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.32" />
+          <linearGradient id={ids.fill} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.30" />
             <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+          </linearGradient>
+          {/* Сине-фиолетовый градиент основной линии. */}
+          <linearGradient id={ids.stroke} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="var(--chart-5)" />
+            <stop offset="50%" stopColor="var(--accent)" />
+            <stop offset="100%" stopColor="var(--chart-7)" />
           </linearGradient>
         </defs>
 
-        {/* Горизонтальная сетка. */}
+        {/* Горизонтальная сетка + подписи оси Y. */}
         {Array.from({ length: GRID_LINES }, (_, i) => {
-          const y = PAD_TOP + ((height - PAD_TOP - PAD_BOTTOM) / (GRID_LINES - 1)) * i;
+          const y = PAD_TOP + (innerH / (GRID_LINES - 1)) * i;
+          const val = max * (1 - i / (GRID_LINES - 1));
           return (
-            <line
-              key={i}
-              className="linechart__grid"
-              x1={PAD_X}
-              y1={y}
-              x2={width - PAD_X}
-              y2={y}
-            />
+            <g key={i}>
+              <line
+                className="linechart__grid"
+                x1={PAD_LEFT}
+                y1={y}
+                x2={width - PAD_RIGHT}
+                y2={y}
+              />
+              <text className="linechart__ylabel" x={PAD_LEFT - 6} y={y + 3} textAnchor="end">
+                {yf(val)}
+              </text>
+            </g>
           );
         })}
 
-        {/* Заливка под кривой. */}
-        <path className="linechart__area" d={areaPath} fill={`url(#${gradId})`} />
+        {/* Заливка под основной кривой. */}
+        {primary && <path className="linechart__area" d={areaPath} fill={`url(#${ids.fill})`} />}
 
-        {/* Сама кривая (с анимацией прорисовки). */}
-        <path
-          className="linechart__line linechart__line--draw"
-          d={linePath}
-          pathLength={1000}
-        />
+        {/* Линии категорий (под основной). */}
+        {plots
+          .filter((p) => !p.s.primary)
+          .map((p) => (
+            <path
+              key={p.s.key}
+              className="linechart__line linechart__line--cat"
+              d={p.d}
+              style={{ stroke: p.s.color }}
+            />
+          ))}
 
-        {/* Постоянные «горящие» точки. */}
-        {plot.map((p, i) =>
-          p.point.highlight ? (
-            <circle key={`pin-${i}`} className="linechart__pin" cx={p.x} cy={p.y} r={4} />
-          ) : null,
+        {/* Основная линия — сине-фиолетовый градиент. */}
+        {primary && (
+          <path
+            className="linechart__line linechart__line--primary linechart__line--draw"
+            d={primary.d}
+            stroke={`url(#${ids.stroke})`}
+            pathLength={1000}
+          />
         )}
 
-        {/* Курсор: направляющая + акцентная точка. */}
-        {active && (
+        {/* Постоянная подсветка (текущий час/день) на основной линии. */}
+        {primary &&
+          highlightIndex != null &&
+          highlightIndex >= 0 &&
+          highlightIndex < n && (
+            <circle
+              className="linechart__pin"
+              cx={xAt(highlightIndex)}
+              cy={yAt(primary.s.values[highlightIndex])}
+              r={4}
+            />
+          )}
+
+        {/* Курсор: направляющая + точки по всем сериям. */}
+        {hi != null && (
           <>
             <line
               className="linechart__guide"
-              x1={active.x}
+              x1={xAt(hi)}
               y1={PAD_TOP}
-              x2={active.x}
+              x2={xAt(hi)}
               y2={baseY}
             />
-            <circle className="linechart__cursor-ring" cx={active.x} cy={active.y} r={6} />
-            <circle className="linechart__cursor-dot" cx={active.x} cy={active.y} r={3} />
+            {plots.map((p) => (
+              <g key={`c-${p.s.key}`}>
+                <circle
+                  className="linechart__cursor-ring"
+                  cx={xAt(hi)}
+                  cy={yAt(p.s.values[hi])}
+                  r={5}
+                  style={{ stroke: colorOf(p.s) }}
+                />
+                <circle
+                  className="linechart__cursor-dot"
+                  cx={xAt(hi)}
+                  cy={yAt(p.s.values[hi])}
+                  r={2.5}
+                  style={{ fill: colorOf(p.s) }}
+                />
+              </g>
+            ))}
           </>
         )}
       </svg>
 
       {/* Плавающий тултип (HTML поверх SVG). */}
-      {active && (
+      {hi != null && (
         <div
           className="linechart__tip"
-          style={{ left: `${(active.x / width) * 100}%` }}
+          style={{ left: `${(xAt(hi) / width) * 100}%` }}
         >
-          <span className="linechart__tip-label">{active.point.label}</span>
-          <span className="linechart__tip-value">{format(active.point.value)}</span>
+          <span className="linechart__tip-label">{xLabels[hi]}</span>
+          {plots.map((p) => (
+            <span className="linechart__tip-row" key={`t-${p.s.key}`}>
+              <span className="linechart__tip-dot" style={{ background: colorOf(p.s) }} />
+              {p.s.label && <span className="linechart__tip-name">{p.s.label}</span>}
+              <span className="linechart__tip-val">{format(p.s.values[hi])}</span>
+            </span>
+          ))}
         </div>
       )}
 
       {/* Подписи оси X. */}
-      <div className="linechart__labels">
-        {points.map((p, i) => (
-          <span className="linechart__label" key={p.label + i}>
-            {i % labelEvery === 0 ? p.label : ""}
+      <div
+        className="linechart__labels"
+        style={{ paddingLeft: PAD_LEFT, paddingRight: PAD_RIGHT }}
+      >
+        {xLabels.map((lab, i) => (
+          <span className="linechart__label" key={lab + i}>
+            {i % labelEvery === 0 ? lab : ""}
           </span>
         ))}
       </div>

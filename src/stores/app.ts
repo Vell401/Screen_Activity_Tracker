@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type { RangePreset } from "@/lib/format";
+import { setFormatLang } from "@/lib/format";
+import type { Lang } from "@/lib/i18n";
 
 /** Активная вкладка навигации. */
 export type ViewId =
@@ -17,6 +19,10 @@ interface AppState {
   range: RangePreset;
   setRange: (range: RangePreset) => void;
 
+  /** Язык интерфейса (по умолчанию английский). */
+  lang: Lang;
+  setLang: (lang: Lang) => void;
+
   /** Включён ли capture engine (зеркало настройки в БД). */
   trackingEnabled: boolean;
   setTrackingEnabled: (enabled: boolean) => void;
@@ -32,6 +38,12 @@ export const useAppStore = create<AppState>((set) => ({
 
   range: "today",
   setRange: (range) => set({ range }),
+
+  lang: "en",
+  setLang: (lang) => {
+    setFormatLang(lang);
+    set({ lang });
+  },
 
   trackingEnabled: true,
   setTrackingEnabled: (trackingEnabled) => set({ trackingEnabled }),

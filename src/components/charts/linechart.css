@@ -107,3 +107,43 @@
   color: var(--text-bright);
   font-variant-numeric: tabular-nums;
 }
+
+/* Подписи оси Y (слева). */
+.linechart__ylabel {
+  fill: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Линии категорий — тоньше и без свечения, чтобы не спорить с основной. */
+.linechart__line--cat {
+  stroke-width: 2;
+  filter: none;
+  opacity: 0.92;
+}
+
+/* Строки мультитултипа (значение по каждой серии). */
+.linechart__tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+.linechart__tip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.linechart__tip-name {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.linechart__tip-val {
+  margin-left: auto;
+  padding-left: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-bright);
+  font-variant-numeric: tabular-nums;
+}

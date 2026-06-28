@@ -22,21 +22,35 @@ const DEFAULT_SETTINGS: &[(&str, &str)] = &[
     ("idle_threshold_ms", "120000"),
     ("tracking_enabled", "true"),
     ("minimize_to_tray", "true"),
+    ("language", "en"),
     ("db_schema_version", "1"),
 ];
 
 /// Предзаполненные правила категорий (только при пустой таблице).
 /// Зеркало: Telegram -> Мессенджеры, IDE -> Разработка, и т.д.
+// Категории совпадают с DEFAULT_CATEGORIES (i18n.ts), язык по умолчанию — английский.
+// Только типы app/domain (тип domain_suffix из UI убран; в matching он ещё поддержан
+// для legacy-правил, но новые/сидовые правила его не используют).
 const SEED_RULES: &[(&str, &str, &str, &str)] = &[
     // (name, match_type, pattern, color)
-    ("Мессенджеры", "app", "Telegram", "#5a9ff5"),
-    ("Мессенджеры", "domain", "telegram.org", "#5a9ff5"),
-    ("Мессенджеры", "domain", "web.telegram.org", "#5a9ff5"),
-    ("Разработка", "domain_suffix", "jetbrains.com", "#f55a5a"),
-    ("Разработка", "domain", "github.com", "#f55a5a"),
-    ("Разработка", "app", "Code.exe", "#f55a5a"),
-    ("Развлечения", "domain", "youtube.com", "#f5a535"),
-    ("Развлечения", "domain_suffix", "steampowered.com", "#f5a535"),
+    ("Browser", "app", "chrome.exe", "#00b0f4"),
+    ("Browser", "app", "msedge.exe", "#00b0f4"),
+    ("Browser", "app", "firefox.exe", "#00b0f4"),
+    ("Browser", "app", "opera.exe", "#00b0f4"),
+    ("Browser", "app", "brave.exe", "#00b0f4"),
+    ("Browser", "app", "vivaldi.exe", "#00b0f4"),
+    ("Development", "app", "Code.exe", "#f55a5a"),
+    ("Development", "domain", "github.com", "#f55a5a"),
+    ("Development", "domain", "stackoverflow.com", "#f55a5a"),
+    ("Messengers", "app", "Telegram", "#5a9ff5"),
+    ("Messengers", "app", "Discord", "#5a9ff5"),
+    ("Messengers", "domain", "web.telegram.org", "#5a9ff5"),
+    ("Design", "domain", "figma.com", "#eb459e"),
+    ("AI", "domain", "claude.ai", "#7c83ff"),
+    ("AI", "domain", "chatgpt.com", "#7c83ff"),
+    ("Games", "app", "steam.exe", "#9b84ec"),
+    ("Entertainment", "domain", "youtube.com", "#faa61a"),
+    ("Work", "domain", "mail.google.com", "#5865f2"),
 ];
 
 /// Открыть/создать БД и применить миграции.

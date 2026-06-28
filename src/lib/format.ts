@@ -1,15 +1,41 @@
 /** Форматирование длительностей, дат и палитра для графиков. */
+import type { Lang } from "./i18n";
 
-/** Человекочитаемая длительность: «2 ч 14 мин», «5 мин», «12 с», «0 с». */
+// Язык для локализации единиц/дат. Обновляется из стора при смене языка.
+let LANG: Lang = "en";
+export function setFormatLang(l: Lang): void {
+  LANG = l;
+}
+const locale = () => (LANG === "ru" ? "ru-RU" : "en-US");
+
+/** Человекочитаемая длительность: «2 ч 14 мин» / «2h 14m». */
 export function formatDuration(ms: number): string {
-  if (!ms || ms < 0) return "0 с";
+  if (!ms || ms < 0) return LANG === "ru" ? "0 с" : "0s";
   const totalSec = Math.round(ms / 1000);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
-  if (h > 0) return m > 0 ? `${h} ч ${m} мин` : `${h} ч`;
-  if (m > 0) return s > 0 && m < 10 ? `${m} мин ${s} с` : `${m} мин`;
-  return `${s} с`;
+  if (LANG === "ru") {
+    if (h > 0) return m > 0 ? `${h} ч ${m} мин` : `${h} ч`;
+    if (m > 0) return s > 0 && m < 10 ? `${m} мин ${s} с` : `${m} мин`;
+    return `${s} с`;
+  }
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  if (m > 0) return s > 0 && m < 10 ? `${m}m ${s}s` : `${m}m`;
+  return `${s}s`;
+}
+
+/** Очень компактно: «2ч14м», «30м», «12с», «0» — для подписей оси Y. */
+export function formatDurationShort(ms: number): string {
+  if (!ms || ms < 0) return "0";
+  const totalSec = Math.round(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const ru = LANG === "ru";
+  if (h > 0)
+    return m > 0 ? `${h}${ru ? "ч" : "h"}${m}${ru ? "м" : "m"}` : `${h}${ru ? "ч" : "h"}`;
+  if (m > 0) return `${m}${ru ? "м" : "m"}`;
+  return `${totalSec}${ru ? "с" : "s"}`;
 }
 
 /** Компактно: «2:14», «0:05» (часы:минуты) — для осей/мелких подписей. */
@@ -22,7 +48,7 @@ export function formatHm(ms: number): string {
 
 /** Время «14:05». */
 export function formatTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString("ru-RU", {
+  return new Date(ms).toLocaleTimeString(locale(), {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -30,7 +56,7 @@ export function formatTime(ms: number): string {
 
 /** Дата «25 июн». */
 export function formatDay(ms: number): string {
-  return new Date(ms).toLocaleDateString("ru-RU", {
+  return new Date(ms).toLocaleDateString(locale(), {
     day: "numeric",
     month: "short",
   });
@@ -43,10 +69,11 @@ export function formatDateTime(ms: number): string {
 
 /** Размер файла. */
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} Б`;
+  const ru = LANG === "ru";
+  if (bytes < 1024) return `${bytes} ${ru ? "Б" : "B"}`;
   const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(0)} КБ`;
-  return `${(kb / 1024).toFixed(1)} МБ`;
+  if (kb < 1024) return `${kb.toFixed(0)} ${ru ? "КБ" : "KB"}`;
+  return `${(kb / 1024).toFixed(1)} ${ru ? "МБ" : "MB"}`;
 }
 
 export type RangePreset = "today" | "week" | "month";
@@ -68,11 +95,7 @@ export function rangeFor(preset: RangePreset): { from: number; to: number } {
   return { from: start.getTime(), to };
 }
 
-export const RANGE_LABEL: Record<RangePreset, string> = {
-  today: "Сегодня",
-  week: "7 дней",
-  month: "30 дней",
-};
+// Подписи диапазона перенесены в i18n: range.today / range.week / range.month.
 
 /**
  * Палитра для графиков (значения берём из theme.css через CSS-переменные).

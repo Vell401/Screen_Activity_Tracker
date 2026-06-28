@@ -16,18 +16,11 @@
 }
 
 .sidebar__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 38px;
   height: 38px;
   border-radius: var(--radius-md);
-  background: var(--accent-gradient);
-  color: #fff;
-  font-weight: 800;
-  font-size: 13px;
-  letter-spacing: 0.02em;
-  box-shadow: var(--shadow-sm);
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .sidebar__brandtext {

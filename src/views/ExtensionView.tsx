@@ -8,10 +8,22 @@ import {
   IconRefresh,
 } from "@/components/icons";
 import { useAsyncData } from "@/lib/hooks";
+import { useT } from "@/lib/i18n";
 import { exportExtension, getExtensionStatus } from "@/lib/tauri";
 import { formatDuration } from "@/lib/format";
 
+// Все браузеры на движке Chromium — расширение в них работает одинаково.
+const BROWSERS: [string, string][] = [
+  ["Chrome", "chrome://extensions"],
+  ["Edge", "edge://extensions"],
+  ["Yandex", "browser://extensions"],
+  ["Opera", "opera://extensions"],
+  ["Brave", "brave://extensions"],
+  ["Vivaldi", "vivaldi://extensions"],
+];
+
 export function ExtensionView() {
+  const t = useT();
   const status = useAsyncData(getExtensionStatus, [], 3000);
   const [busy, setBusy] = useState(false);
   const [exportPath, setExportPath] = useState<string | null>(null);
@@ -41,12 +53,12 @@ export function ExtensionView() {
     <div className="ext">
       {/* Статус */}
       <Card
-        title="Статус расширения"
+        title={t("ext.status")}
         actions={
           <button
             className="btn btn--icon btn--ghost"
             onClick={() => status.reload()}
-            title="Обновить статус"
+            title={t("ext.refreshStatus")}
           >
             <IconRefresh />
           </button>
@@ -58,25 +70,25 @@ export function ExtensionView() {
           </div>
           <div className="ext__hero-text">
             <span className="ext__hero-title">
-              {connected ? "Расширение подключено" : "Расширение не подключено"}
+              {connected ? t("ext.connected") : t("ext.notConnected")}
             </span>
             <span className="ext__hero-sub">
               {connected
                 ? s?.lastSeenMsAgo != null
-                  ? `последний сигнал ${formatDuration(s.lastSeenMsAgo)} назад`
-                  : "получаем данные вкладок"
-                : "загрузите расширение в браузер (шаги ниже)"}
+                  ? t("ext.lastSignal", { v: formatDuration(s.lastSeenMsAgo) })
+                  : t("ext.receiving")
+                : t("ext.loadHint")}
             </span>
           </div>
           <span className={"badge " + (connected ? "badge--on" : "badge--off")}>
             <span className="badge__dot" />
-            {connected ? "online" : "offline"}
+            {connected ? t("ext.online") : t("ext.offline")}
           </span>
         </div>
 
         {s?.lastUrl && (
           <div className="ext__lasturl">
-            <span className="field__label">Последний URL</span>
+            <span className="field__label">{t("ext.lastUrl")}</span>
             <code className="ext__url">{s.lastUrl}</code>
           </div>
         )}
@@ -85,7 +97,7 @@ export function ExtensionView() {
       </Card>
 
       {/* Шаги установки */}
-      <Card title="Установка" subtitle="два шага — и браузерная активность попадёт в трекер">
+      <Card title={t("ext.install")} subtitle={t("ext.installSub")}>
         <ol className="ext__steps">
           {/* Шаг 1 */}
           <li className="ext__step">
@@ -93,10 +105,8 @@ export function ExtensionView() {
               {exportPath ? <IconCheck width={16} height={16} /> : "1"}
             </span>
             <div className="ext__step-body">
-              <span className="ext__step-title">Скачать файлы расширения</span>
-              <span className="ext__step-desc">
-                Сохранит папку расширения в «Загрузки» и откроет её в проводнике.
-              </span>
+              <span className="ext__step-title">{t("ext.step1")}</span>
+              <span className="ext__step-desc">{t("ext.step1Desc")}</span>
               <div className="ext__step-actions">
                 <button
                   className="btn btn--primary btn--sm"
@@ -104,7 +114,7 @@ export function ExtensionView() {
                   disabled={busy}
                 >
                   <IconDownload width={15} height={15} />
-                  Скачать расширение
+                  {t("ext.download")}
                 </button>
               </div>
               {exportPath && (
@@ -113,7 +123,7 @@ export function ExtensionView() {
                   <button
                     className="btn btn--icon btn--ghost btn--sm"
                     onClick={() => copy(exportPath)}
-                    title="Скопировать путь"
+                    title={t("ext.copyPath")}
                   >
                     <IconCopy width={14} height={14} />
                   </button>
@@ -126,24 +136,15 @@ export function ExtensionView() {
           <li className="ext__step">
             <span className="ext__step-num">2</span>
             <div className="ext__step-body">
-              <span className="ext__step-title">Загрузить в браузер</span>
-              <span className="ext__step-desc">
-                Откройте страницу расширений → включите «Режим разработчика» →
-                «Загрузить распакованное расширение» → выберите скачанную папку.
-                Регистрация и права администратора не нужны.
-              </span>
+              <span className="ext__step-title">{t("ext.step2")}</span>
+              <span className="ext__step-desc">{t("ext.step2Desc")}</span>
               <div className="ext__browsers">
-                {[
-                  ["Chrome", "chrome://extensions"],
-                  ["Edge", "edge://extensions"],
-                  ["Yandex", "browser://extensions"],
-                  ["Brave", "brave://extensions"],
-                ].map(([name, url]) => (
+                {BROWSERS.map(([name, url]) => (
                   <button
                     key={name}
                     className="ext__chip"
                     onClick={() => copy(url)}
-                    title={`Скопировать ${url}`}
+                    title={`${t("ext.copyPath")}: ${url}`}
                   >
                     <span>{name}</span>
                     <code>{url}</code>
@@ -151,30 +152,27 @@ export function ExtensionView() {
                   </button>
                 ))}
               </div>
+              <p className="field__hint">{t("ext.firefoxNote")}</p>
             </div>
           </li>
         </ol>
       </Card>
 
       {/* Детали */}
-      <Card title="Как это работает" subtitle="локально, без облака">
+      <Card title={t("ext.how")} subtitle={t("ext.howSub")}>
         <div className="ext__kv">
-          <span className="field__label">Локальный сервер</span>
+          <span className="field__label">{t("ext.localServer")}</span>
           <div className="ext__path">
             <code>
-              {s?.serverRunning ? `127.0.0.1:${s.serverPort}` : "не запущен"}
+              {s?.serverRunning ? `127.0.0.1:${s.serverPort}` : t("ext.notRunning")}
             </code>
             <span className={"badge " + (s?.serverRunning ? "badge--on" : "badge--off")}>
               <span className="badge__dot" />
-              {s?.serverRunning ? "работает" : "—"}
+              {s?.serverRunning ? t("ext.running") : "—"}
             </span>
           </div>
         </div>
-        <p className="field__hint">
-          Расширение находит локальный сервер приложения на 127.0.0.1 и шлёт туда
-          URL активной вкладки. Связь только внутри вашего ПК — в интернет ничего
-          не отправляется, реестр и админ-права не используются.
-        </p>
+        <p className="field__hint">{t("ext.howHint")}</p>
       </Card>
     </div>
   );

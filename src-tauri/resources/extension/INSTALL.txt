@@ -1,32 +1,55 @@
+Screen Activity Tracker — browser extension setup
+==================================================
+
+The extension sends the URL and title of the active tab to the Screen Activity
+Tracker app over the local address 127.0.0.1 (the app's local HTTP server).
+Nothing is sent to the internet. No registry entries and no admin rights needed.
+
+INSTALL (Chrome / Edge / Brave / Yandex / Opera / Vivaldi — all Chromium)
+------------------------------------------------------------------------
+1. Make sure the Screen Activity Tracker app is running.
+2. Open the extensions page:
+     Chrome  -> chrome://extensions
+     Edge    -> edge://extensions
+     Brave   -> brave://extensions
+     Opera   -> opera://extensions
+     Vivaldi -> vivaldi://extensions
+     Yandex  -> browser://extensions
+3. Turn on "Developer mode".
+4. Click "Load unpacked".
+5. Select THIS folder (the one containing manifest.json).
+6. Done — the indicator on the app's "Extension" tab turns green.
+
+CHECK
+-----
+Open any website — the "last URL" appears on the "Extension" tab.
+If the indicator is red:
+  * make sure the app is running;
+  * reload the extension (the reload button) or refresh the extensions page.
+
+Firefox is NOT supported: it uses a different engine, and an unpacked MV3
+extension only loads temporarily there (gone after a browser restart).
+
+REMOVE
+------
+Just remove the extension from the browser's extensions page.
+
+
+===========================================================
 Screen Activity Tracker — установка браузерного расширения
 ===========================================================
 
-Расширение передаёт URL и заголовок активной вкладки в приложение
-Screen Activity Tracker по локальному адресу 127.0.0.1 (локальный HTTP-сервер
-приложения). В интернет ничего не отправляется. Регистрация в реестре и
-права администратора НЕ нужны.
+Расширение передаёт URL и заголовок активной вкладки в приложение по локальному
+адресу 127.0.0.1. В интернет ничего не отправляется. Реестр и права
+администратора НЕ нужны.
 
-УСТАНОВКА (Chrome / Edge / Brave / Yandex / Opera / Vivaldi)
------------------------------------------------------------
-1. Убедитесь, что приложение Screen Activity Tracker запущено.
-2. Откройте страницу расширений:
-     Chrome  → chrome://extensions
-     Edge    → edge://extensions
-     Brave   → brave://extensions
-     Opera   → opera://extensions
-     Yandex  → browser://extensions
-3. Включите «Режим разработчика» (Developer mode) — переключатель.
-4. Нажмите «Загрузить распакованное расширение» (Load unpacked).
-5. Выберите ЭТУ папку (в которой лежит manifest.json).
-6. Готово. На вкладке «Расширение» в приложении индикатор станет зелёным.
+УСТАНОВКА (Chrome / Edge / Brave / Yandex / Opera / Vivaldi — все Chromium)
+1. Убедитесь, что приложение запущено.
+2. Откройте страницу расширений (адреса выше).
+3. Включите «Режим разработчика».
+4. Нажмите «Загрузить распакованное расширение».
+5. Выберите ЭТУ папку (где лежит manifest.json).
+6. Готово — индикатор на вкладке «Расширение» станет зелёным.
 
-ПРОВЕРКА
---------
-Откройте любой сайт — на вкладке «Расширение» появится «последний URL».
-Если индикатор красный:
-  • убедитесь, что приложение запущено;
-  • обновите расширение (кнопка ⟳) или перезагрузите страницу расширений.
-
-УДАЛЕНИЕ
---------
-Просто удалите расширение со страницы расширений браузера.
+Firefox НЕ поддерживается: другой движок, распакованное MV3-расширение там
+грузится лишь временно и слетает после перезапуска браузера.

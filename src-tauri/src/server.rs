@@ -15,6 +15,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -27,6 +28,11 @@ pub const PORTS: &[u16] = &[35745, 35746, 35747, 35748];
 
 /// Максимальный размер тела POST (фавикон в base64 — десятки КБ).
 const MAX_BODY: usize = 1024 * 1024;
+
+/// Таймаут чтения/записи одного соединения. Защищает от клиента, который
+/// прислал завышенный Content-Length (или молчит): без него read_exact/read_line
+/// блокировались бы навсегда.
+const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Heartbeat активной вкладки.
 #[derive(Deserialize)]
@@ -68,12 +74,21 @@ pub fn spawn(state: Arc<AppState>) {
         log::info!("local heartbeat server on http://127.0.0.1:{port}");
 
         for stream in listener.incoming().flatten() {
-            handle(stream, &state);
+            // Каждое соединение — в отдельном потоке, чтобы один медленный или
+            // зависший клиент не блокировал приём остальных запросов. Таймауты
+            // ниже гарантируют, что и сам поток-обработчик не зависнет навсегда.
+            let st = state.clone();
+            std::thread::spawn(move || handle(stream, &st));
         }
     });
 }
 
 fn handle(mut stream: TcpStream, state: &AppState) {
+    // Без таймаутов клиент с Content-Length больше реально присланного тела
+    // (или вовсе молчащий) подвесил бы read_exact/read_line навсегда.
+    let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
+
     let peer = match stream.try_clone() {
         Ok(s) => s,
         Err(_) => return,

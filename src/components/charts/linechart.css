@@ -1,0 +1,109 @@
+/* ---- LineChart (плавный график активности) ---- */
+.linechart {
+  position: relative;
+  width: 100%;
+}
+.linechart__svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+/* Линия графика: рисуется через анимацию dash-offset при монтировании. */
+.linechart__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* Постоянная толщина в пикселях независимо от масштаба viewBox. */
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 2px 6px rgba(88, 101, 242, 0.4));
+}
+.linechart__line--draw {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: linechart-draw 0.7s ease forwards;
+}
+@keyframes linechart-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.linechart__area {
+  stroke: none;
+}
+
+.linechart__grid {
+  stroke: var(--track);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+/* Постоянные «горящие» точки (highlight). */
+.linechart__pin {
+  fill: var(--accent);
+  stroke: var(--bg-card);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 5px rgba(88, 101, 242, 0.9));
+}
+
+/* Курсор-наведение: вертикальная направляющая + точка. */
+.linechart__guide {
+  stroke: var(--divider);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.linechart__cursor-ring {
+  fill: var(--bg-card);
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+.linechart__cursor-dot {
+  fill: var(--accent);
+}
+
+/* Подписи оси X под графиком. */
+.linechart__labels {
+  display: flex;
+  margin-top: 6px;
+}
+.linechart__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Плавающий тултип. */
+.linechart__tip {
+  position: absolute;
+  top: 0;
+  padding: 6px 9px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  white-space: nowrap;
+  transform: translate(-50%, -8px);
+  z-index: 3;
+}
+.linechart__tip-label {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.linechart__tip-value {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-bright);
+  font-variant-numeric: tabular-nums;
+}

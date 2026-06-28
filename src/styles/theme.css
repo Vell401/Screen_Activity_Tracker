@@ -50,6 +50,21 @@
   /* Шрифты */
   --font-sans: "Segoe UI", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  /* Палитра графиков — насыщённые тона, читаемые на тёмном фоне */
+  --chart-1: #5865f2; /* blurple */
+  --chart-2: #3ba55d; /* green */
+  --chart-3: #faa61a; /* amber */
+  --chart-4: #eb459e; /* fuchsia */
+  --chart-5: #00b0f4; /* cyan */
+  --chart-6: #f55a5a; /* red */
+  --chart-7: #9b84ec; /* lavender */
+  --chart-8: #2dd4bf; /* teal */
+
+  /* Градиенты/спец-фоны для акцентных карточек */
+  --accent-gradient: linear-gradient(135deg, #5865f2 0%, #7c83ff 100%);
+  --bg-elevated: #313338; /* приподнятый слой поверх card */
+  --track: rgba(255, 255, 255, 0.06); /* фон прогресс-дорожек */
 }
 
 /* Reset */

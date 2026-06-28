@@ -15,8 +15,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-autostart = "2"
 
 # Сериализация для IPC-команд
 serde = { version = "1", features = ["derive"] }
@@ -29,7 +31,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 log = "0.4"
 env_logger = "0.11"
 
-# Win32 API для capture engine
+# Win32 API для capture engine и извлечения иконок
 # features перечислены явно — только то, что нужно, чтобы не раздувать билд
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -38,4 +40,14 @@ windows = { version = "0.58", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
+    # Извлечение иконок приложений через ExtractIconExW + DrawIconEx + GetDIBits
+    "Win32_UI_Shell",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Com",
 ] }
+
+# Кодирование PNG и SHA-256 для кеша иконок
+image = { version = "0.25", default-features = false, features = ["png"] }
+sha2 = "0.10"

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        width: 260px;
+        margin: 0;
+        padding: 14px 16px;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: #2b2d31;
+        color: #dbdee1;
+        font-size: 13px;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 8px;
+        color: #fff;
+      }
+      p {
+        margin: 0 0 10px;
+        color: #b5bac1;
+        line-height: 1.5;
+      }
+      button {
+        width: 100%;
+        padding: 8px;
+        border: none;
+        border-radius: 6px;
+        background: #5865f2;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #4752c4;
+      }
+      .ok {
+        color: #3ba55d;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Screen Activity Tracker</h1>
+    <p>
+      Расширение передаёт URL активной вкладки в приложение
+      <span class="ok">локально</span>, через native messaging. В интернет
+      ничего не уходит.
+    </p>
+    <button id="reconnect">Переподключить</button>
+    <script src="popup.js"></script>
+  </body>
+</html>

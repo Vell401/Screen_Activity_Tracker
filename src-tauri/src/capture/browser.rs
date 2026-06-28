@@ -21,7 +21,6 @@ pub enum Browser {
 }
 
 impl Browser {
-    #[allow(dead_code)] // понадобится в Фазе 3 для записи activities.browser
     pub fn as_str(&self) -> &'static str {
         match self {
             Browser::Chrome => "chrome",
@@ -100,7 +99,7 @@ fn find_url(text: &str) -> Option<String> {
 }
 
 /// Вытащить registrable domain из URL (упрощённо: хост без www.).
-fn url_domain(url: &str) -> Option<String> {
+pub fn url_domain(url: &str) -> Option<String> {
     let no_scheme = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))

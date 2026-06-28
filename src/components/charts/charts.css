@@ -1,0 +1,274 @@
+/* ---- общий placeholder ---- */
+.chart-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 18px 4px;
+  text-align: center;
+}
+
+/* ---- BarList ---- */
+.barlist {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.barlist__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.barlist__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.barlist__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.barlist__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+}
+.barlist__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.barlist__name {
+  color: var(--text-normal);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.barlist__sub {
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.barlist__value {
+  color: var(--text-bright);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.barlist__track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--track);
+  overflow: hidden;
+}
+.barlist__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+/* ---- Donut ---- */
+.donut {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.donut__chart {
+  position: relative;
+  flex-shrink: 0;
+  width: 160px;
+  height: 160px;
+}
+.donut__chart circle {
+  transition: stroke-dasharray 0.5s ease;
+}
+.donut__center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.donut__value {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-bright);
+  line-height: 1.15;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.donut__label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.donut__legend {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 160px;
+}
+.donut__legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.donut__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.donut__legend-label {
+  color: var(--text-normal);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.donut__legend-pct {
+  color: var(--text-bright);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- TimeBars ---- */
+.timebars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 160px;
+  padding-top: 8px;
+}
+.timebars__col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+}
+.timebars__barwrap {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.timebars__bar {
+  width: 100%;
+  max-width: 26px;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+  opacity: 0.8;
+  transition: height 0.4s ease, opacity 0.15s ease;
+}
+.timebars__col:hover .timebars__bar {
+  opacity: 1;
+}
+.timebars__bar--hot {
+  background: var(--accent-gradient);
+  opacity: 1;
+}
+.timebars__tip {
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 4px;
+  padding: 2px 6px;
+  background: var(--bg-input);
+  color: var(--text-bright);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+  z-index: 2;
+}
+.timebars__col:hover .timebars__tip {
+  opacity: 1;
+  transform: translateY(0);
+}
+.timebars__label {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- StatCard (KPI) ---- */
+.statgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+.stat {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+.stat--accent {
+  background: var(--accent-gradient);
+}
+.stat__icon {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  opacity: 0.25;
+}
+.stat__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.stat--accent .stat__label {
+  color: rgba(255, 255, 255, 0.85);
+}
+.stat__value {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text-bright);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.stat--accent .stat__value {
+  color: #fff;
+}
+.stat__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.stat--accent .stat__hint {
+  color: rgba(255, 255, 255, 0.8);
+}

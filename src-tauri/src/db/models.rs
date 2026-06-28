@@ -120,3 +120,29 @@ pub struct SettingEntry {
     pub key: String,
     pub value: String,
 }
+
+/// Текущая (живая) активность для виджета «Сейчас» на дашборде.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentActivity {
+    pub app_name: String,
+    pub window_title: Option<String>,
+    pub domain: Option<String>,
+    pub url: Option<String>,
+    pub browser: Option<String>,
+    pub is_idle: bool,
+    pub category_name: Option<String>,
+    pub tracking_enabled: bool,
+}
+
+/// Сведения о хранилище для вкладки «Настройки».
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbInfo {
+    pub path: String,
+    pub size_bytes: i64,
+    pub activity_count: i64,
+    pub rule_count: i64,
+    /// unix ms самой ранней записи (None — данных нет).
+    pub oldest_ms: Option<i64>,
+}

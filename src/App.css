@@ -13,46 +13,37 @@
 }
 
 .app__header {
-  height: 48px;
+  height: 56px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 20px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .app__heading {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   color: var(--text-bright);
+}
+
+.app__header-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app__divider {
+  width: 1px;
+  height: 24px;
+  background: var(--divider);
 }
 
 .app__scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
-}
-
-/* View — горизонтальная сетка карточек; оборачивается при нехватке места */
-.view {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
-  align-content: start;
-}
-
-.muted {
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-code {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  background: var(--bg-input);
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  color: var(--text-bright);
+  padding: 20px;
 }

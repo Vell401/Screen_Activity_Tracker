@@ -42,3 +42,15 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Кеш извлечённых иконок приложений (по имени процесса, нормализованному).
+-- icon_hash — SHA-256 содержимого PNG; PNG-файл лежит на диске в data_dir/icons/<hash>.png.
+-- source  — откуда взяли: 'exe' (из .exe) | 'window' (WM_GETICON из окна).
+-- updated_at — последний раз когда успешно извлекли (unix ms).
+CREATE TABLE IF NOT EXISTS app_icons (
+    app_name    TEXT PRIMARY KEY,       -- нормализованное имя процесса (chrome.exe, Code.exe)
+    icon_hash   TEXT NOT NULL,          -- hex sha256 PNG
+    source      TEXT NOT NULL DEFAULT 'exe',
+    width       INTEGER NOT NULL DEFAULT 32,
+    updated_at  INTEGER NOT NULL
+);

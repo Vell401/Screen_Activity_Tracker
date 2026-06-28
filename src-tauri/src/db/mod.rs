@@ -18,9 +18,10 @@ const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// Значения по умолчанию для таблицы settings.
 /// Применяются при первом старте (INSERT OR IGNORE — не перезаписывают пользовательские).
 const DEFAULT_SETTINGS: &[(&str, &str)] = &[
-    ("sample_interval_ms", "1000"),
-    ("idle_threshold_ms", "60000"),
+    ("sample_interval_ms", "5000"),
+    ("idle_threshold_ms", "120000"),
     ("tracking_enabled", "true"),
+    ("minimize_to_tray", "true"),
     ("db_schema_version", "1"),
 ];
 
@@ -46,6 +47,8 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     conn.pragma_update(None, "foreign_keys", "ON")?;
     apply_migrations(&conn)?;
     seed_defaults(&conn)?;
+    // Приводим category_id всех строк в соответствие текущим правилам.
+    recategorize_all(&conn)?;
     Ok(conn)
 }
 
@@ -265,6 +268,117 @@ pub fn delete_rule(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Имя категории (правила) по id.
+pub fn category_name(conn: &Connection, id: i64) -> rusqlite::Result<Option<String>> {
+    let res: rusqlite::Result<String> = conn.query_row(
+        "SELECT name FROM category_rules WHERE id=?1",
+        rusqlite::params![id],
+        |r| r.get(0),
+    );
+    match res {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Подобрать id правила-категории для (app_name, domain) по приоритету.
+/// Возвращает первое (наивысшего приоритета) сматчившееся правило.
+pub fn find_category_id(
+    conn: &Connection,
+    app_name: &str,
+    domain: Option<&str>,
+) -> rusqlite::Result<Option<i64>> {
+    let rules = list_rules(conn)?; // priority DESC, name ASC
+    let app_l = app_name.to_ascii_lowercase();
+    let dom_l = domain.map(|d| d.to_ascii_lowercase());
+
+    for r in &rules {
+        let pat = r.pattern.trim().to_ascii_lowercase();
+        if pat.is_empty() {
+            continue;
+        }
+        let hit = match r.match_type.as_str() {
+            "app" => app_l.contains(&pat),
+            "domain" => dom_l.as_deref() == Some(pat.as_str()),
+            "domain_suffix" => match &dom_l {
+                Some(d) => *d == pat || d.ends_with(&format!(".{pat}")),
+                None => false,
+            },
+            _ => false,
+        };
+        if hit {
+            return Ok(r.id);
+        }
+    }
+    Ok(None)
+}
+
+/// Пересчитать category_id у всех строк activities по текущим правилам.
+/// Применяем правила по возрастанию приоритета, чтобы высший приоритет
+/// перезаписал низший (последним «выиграло» нужное правило).
+pub fn recategorize_all(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute("UPDATE activities SET category_id = NULL", [])?;
+
+    let rules: Vec<(i64, String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, match_type, pattern FROM category_rules ORDER BY priority ASC, id ASC",
+        )?;
+        let mapped = stmt.query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        })?;
+        mapped.filter_map(|x| x.ok()).collect()
+    };
+
+    for (id, mt, pattern) in rules {
+        let pattern = pattern.trim().to_string();
+        if pattern.is_empty() {
+            continue;
+        }
+        match mt.as_str() {
+            "app" => {
+                conn.execute(
+                    "UPDATE activities SET category_id=?1
+                     WHERE instr(lower(app_name), lower(?2)) > 0",
+                    rusqlite::params![id, pattern],
+                )?;
+            }
+            "domain" => {
+                conn.execute(
+                    "UPDATE activities SET category_id=?1 WHERE lower(domain)=lower(?2)",
+                    rusqlite::params![id, pattern],
+                )?;
+            }
+            "domain_suffix" => {
+                conn.execute(
+                    "UPDATE activities SET category_id=?1
+                     WHERE lower(domain)=lower(?2) OR lower(domain) LIKE '%.'||lower(?2)",
+                    rusqlite::params![id, pattern],
+                )?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Удалить все записи активности (кнопка «очистить данные»).
+pub fn clear_activities(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM activities", [])?;
+    Ok(())
+}
+
+/// Статистика по БД: число строк и границы по времени.
+pub fn db_stats(conn: &Connection) -> rusqlite::Result<(i64, i64, Option<i64>)> {
+    let activity_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM activities", [], |r| r.get(0))?;
+    let rule_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM category_rules", [], |r| r.get(0))?;
+    let oldest: Option<i64> =
+        conn.query_row("SELECT MIN(started_at) FROM activities", [], |r| r.get(0))?;
+    Ok((activity_count, rule_count, oldest))
+}
+
 // ----- queries: settings ---------------------------------------------------
 
 pub fn list_settings(conn: &Connection) -> rusqlite::Result<Vec<SettingEntry>> {
@@ -308,4 +422,204 @@ pub fn with_conn<R>(
 ) -> rusqlite::Result<R> {
     let conn = lock.lock().expect("DB mutex poisoned");
     f(&conn)
+}
+
+// ----- queries: app_icons --------------------------------------------------
+
+/// Запись о закешированной иконке приложения.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppIcon {
+    pub app_name: String,
+    pub icon_hash: String,
+    pub source: String,
+    pub width: i64,
+    pub updated_at: i64,
+}
+
+/// Достать запись об иконке по нормализованному имени процесса.
+pub fn get_app_icon(conn: &Connection, app_name: &str) -> rusqlite::Result<Option<AppIcon>> {
+    let res: rusqlite::Result<AppIcon> = conn.query_row(
+        "SELECT app_name, icon_hash, source, width, updated_at
+         FROM app_icons WHERE app_name = ?1",
+        rusqlite::params![app_name],
+        |r| {
+            Ok(AppIcon {
+                app_name: r.get(0)?,
+                icon_hash: r.get(1)?,
+                source: r.get(2)?,
+                width: r.get(3)?,
+                updated_at: r.get(4)?,
+            })
+        },
+    );
+    match res {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Список нескольких иконок по именам (для bulk-запроса UI).
+/// Возвращает только те, что есть в кеше.
+pub fn get_app_icons_bulk(conn: &Connection, names: &[String]) -> rusqlite::Result<Vec<AppIcon>> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = std::iter::repeat("?")
+        .take(names.len())
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT app_name, icon_hash, source, width, updated_at
+         FROM app_icons WHERE app_name IN ({})",
+        placeholders
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params = rusqlite::params_from_iter(names.iter());
+    let rows = stmt.query_map(params, |r| {
+        Ok(AppIcon {
+            app_name: r.get(0)?,
+            icon_hash: r.get(1)?,
+            source: r.get(2)?,
+            width: r.get(3)?,
+            updated_at: r.get(4)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Upsert записи об иконке. Если запись уже была с тем же хешем — просто
+/// обновляет `updated_at`. Если хеш изменился — перезаписывает.
+pub fn upsert_app_icon(conn: &Connection, icon: &AppIcon) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO app_icons (app_name, icon_hash, source, width, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(app_name) DO UPDATE SET
+           icon_hash  = excluded.icon_hash,
+           source     = excluded.source,
+           width      = excluded.width,
+           updated_at = excluded.updated_at",
+        rusqlite::params![
+            icon.app_name,
+            icon.icon_hash,
+            icon.source,
+            icon.width,
+            icon.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Все записи app_icons (для отладки / Settings UI).
+#[allow(dead_code)] // пока используется только из Rust-API, зарезервировано для настроек
+pub fn list_app_icons(conn: &Connection) -> rusqlite::Result<Vec<AppIcon>> {
+    let mut stmt = conn.prepare(
+        "SELECT app_name, icon_hash, source, width, updated_at
+         FROM app_icons ORDER BY updated_at DESC",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(AppIcon {
+            app_name: r.get(0)?,
+            icon_hash: r.get(1)?,
+            source: r.get(2)?,
+            width: r.get(3)?,
+            updated_at: r.get(4)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Открываем in-memory БД с той же schema, что и основное приложение,
+    /// и прогоняем CRUD на таблице app_icons.
+    fn open_mem() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(SCHEMA_SQL).expect("apply schema");
+        conn
+    }
+
+    #[test]
+    fn app_icons_upsert_and_get() {
+        let conn = open_mem();
+        let rec = AppIcon {
+            app_name: "chrome.exe".into(),
+            icon_hash: "abc123".into(),
+            source: "exe".into(),
+            width: 32,
+            updated_at: 1_700_000_000_000,
+        };
+        upsert_app_icon(&conn, &rec).expect("insert");
+        let got = get_app_icon(&conn, "chrome.exe").expect("query").expect("row");
+        assert_eq!(got.app_name, "chrome.exe");
+        assert_eq!(got.icon_hash, "abc123");
+        assert_eq!(got.width, 32);
+        assert_eq!(got.updated_at, 1_700_000_000_000);
+
+        // Update: меняем hash.
+        let upd = AppIcon {
+            icon_hash: "def456".into(),
+            updated_at: 1_700_000_999_999,
+            ..rec.clone()
+        };
+        upsert_app_icon(&conn, &upd).expect("update");
+        let got = get_app_icon(&conn, "chrome.exe").expect("query2").expect("row2");
+        assert_eq!(got.icon_hash, "def456");
+        assert_eq!(got.updated_at, 1_700_000_999_999);
+    }
+
+    #[test]
+    fn app_icons_bulk_and_missing() {
+        let conn = open_mem();
+        // Bulk-функция ищет по точному совпадению имени (нормализацию делает
+        // caller — это совпадает с тем, как commands::get_app_icons нормализует
+        // перед передачей в db::get_app_icons_bulk).
+        for (name, hash) in [
+            ("chrome.exe", "h1"),
+            ("code.exe", "h2"),
+            ("devenv.exe", "h3"),
+        ] {
+            upsert_app_icon(
+                &conn,
+                &AppIcon {
+                    app_name: name.into(),
+                    icon_hash: hash.into(),
+                    source: "exe".into(),
+                    width: 32,
+                    updated_at: 0,
+                },
+            )
+            .unwrap();
+        }
+
+        let bulk = get_app_icons_bulk(
+            &conn,
+            &[
+                "chrome.exe".into(),
+                "code.exe".into(),
+                "unknown.exe".into(), // не существует
+            ],
+        )
+        .expect("bulk");
+        assert_eq!(bulk.len(), 2);
+        let names: std::collections::HashSet<_> = bulk.iter().map(|r| r.app_name.as_str()).collect();
+        assert!(names.contains("chrome.exe"));
+        assert!(names.contains("code.exe"));
+        assert!(!names.contains("unknown.exe"));
+
+        // Bulk с пустым списком — пустой результат, без ошибок.
+        let empty = get_app_icons_bulk(&conn, &[]).expect("empty bulk");
+        assert!(empty.is_empty());
+    }
 }

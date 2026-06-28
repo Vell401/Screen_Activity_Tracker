@@ -13,12 +13,14 @@
     "windows": [
       {
         "title": "Screen Activity Tracker",
-        "width": 1100,
-        "height": 720,
-        "minWidth": 820,
-        "minHeight": 540,
+        "width": 1280,
+        "height": 820,
+        "minWidth": 680,
+        "minHeight": 480,
         "resizable": true,
+        "maximizable": true,
         "fullscreen": false,
+        "maximized": true,
         "center": true
       }
     ],

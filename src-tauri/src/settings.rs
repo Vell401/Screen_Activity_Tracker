@@ -10,6 +10,7 @@ use crate::db;
 pub const KEY_SAMPLE_INTERVAL_MS: &str = "sample_interval_ms";
 pub const KEY_IDLE_THRESHOLD_MS: &str = "idle_threshold_ms";
 pub const KEY_TRACKING_ENABLED: &str = "tracking_enabled";
+pub const KEY_MINIMIZE_TO_TRAY: &str = "minimize_to_tray";
 
 /// Динамически читаемые настройки, влияющие на capture engine.
 #[derive(Debug, Clone)]
@@ -22,8 +23,8 @@ pub struct CaptureConfig {
 impl Default for CaptureConfig {
     fn default() -> Self {
         Self {
-            sample_interval_ms: 1000,
-            idle_threshold_ms: 60_000,
+            sample_interval_ms: 5000,
+            idle_threshold_ms: 120_000,
             tracking_enabled: true,
         }
     }

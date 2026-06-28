@@ -1,21 +1,41 @@
 import { create } from "zustand";
-import type { ViewId } from "@/components/Sidebar";
+import type { RangePreset } from "@/lib/format";
+
+/** Активная вкладка навигации. */
+export type ViewId =
+  | "dashboard"
+  | "activity"
+  | "categories"
+  | "extension"
+  | "settings";
 
 interface AppState {
-  /** Активная вкладка навигации. */
   view: ViewId;
   setView: (view: ViewId) => void;
 
-  /** Включён ли capture engine. */
+  /** Выбранный диапазон дат для дашборда/активности. */
+  range: RangePreset;
+  setRange: (range: RangePreset) => void;
+
+  /** Включён ли capture engine (зеркало настройки в БД). */
   trackingEnabled: boolean;
   setTrackingEnabled: (enabled: boolean) => void;
+
+  /** Счётчик ручного обновления — увеличиваем, чтобы перезагрузить данные. */
+  refreshKey: number;
+  bumpRefresh: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   view: "dashboard",
   setView: (view) => set({ view }),
 
-  // По умолчанию считаем включённым — реальное состояние подтянется из БД в Фазе 3.
+  range: "today",
+  setRange: (range) => set({ range }),
+
   trackingEnabled: true,
   setTrackingEnabled: (trackingEnabled) => set({ trackingEnabled }),
+
+  refreshKey: 0,
+  bumpRefresh: () => set((s) => ({ refreshKey: s.refreshKey + 1 })),
 }));

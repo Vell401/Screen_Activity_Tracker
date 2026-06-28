@@ -1,0 +1,54 @@
+/* Стили для AppIcon — иконки приложений и доменов.
+ * Цвета по умолчанию берём из theme.css; бренд-цвета задаются инлайн
+ * только внутри узнаваемых глифов (см. AppIcon.tsx). */
+
+.app-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-bright);
+  user-select: none;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px var(--divider);
+}
+
+/* Глиф-плитки сами рисуют фон через inline-style,
+ * поэтому общую заливку/тень убираем. */
+.app-icon--glyph {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Реальная PNG-иконка из кеша бэкенда. */
+img.app-icon {
+  background: transparent;
+  box-shadow: none;
+  object-fit: contain;
+  /* PNG уже идёт с alpha, никакой дополнительной обводки не нужно.
+   * Лёгкая "плашка" подсветки под иконкой для лучшего контраста. */
+  background-color: var(--bg-elevated);
+}
+img.app-icon--real {
+  /* Иконка реальная, не нужен inset-border. */
+  box-shadow: none;
+}
+
+.app-icon__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Монограмма-fallback: жирная буква на градиентной плитке. */
+.app-icon__mono {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  color: var(--text-bright);
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+}

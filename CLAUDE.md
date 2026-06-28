@@ -52,7 +52,9 @@ React (TS)  ──invoke──▶  Tauri Commands (Rust)  ──▶  SQLite
 
 Команды: `get_activities`, `get_summary`, `list_category_rules`,
 `upsert_category_rule`, `delete_category_rule`, `get_settings`,
-`update_settings`, `set_tracking_enabled`.
+`update_settings`, `set_tracking_enabled`, `get_current_activity`,
+`get_db_info`, `clear_activities`, `recategorize`, `get_extension_status`,
+`export_extension`.
 
 ## Схема БД (`src-tauri/src/db/schema.sql`)
 
@@ -73,12 +75,38 @@ React (TS)  ──invoke──▶  Tauri Commands (Rust)  ──▶  SQLite
 низкоконтрастный серый интерфейсный текст. Акцент blurple (`#5865f2`) — только
 для интерактивных элементов и ключевых KPI.
 
+## Браузерное расширение (локальный HTTP-сервер) — Phase 4 ✅
+
+Точные URL/домены вкладок приходят из браузерного расширения (Chromium: Chrome,
+Edge, Brave, Opera, Yandex, Vivaldi) через **локальный HTTP-сервер**.
+
+> Изначально планировался native messaging, но он оказался ненадёжным (на части
+> сборок Yandex браузер не резолвит HKCU-регистрацию хоста даже при идеально
+> прописанном реестре). Перешли на локальный сервер — он не требует реестра,
+> прав администратора и перезапуска браузера; работает во всех Chromium сразу.
+
+**Сервер** (`server.rs`): при старте биндит первый свободный порт из
+`PORTS = [35745..35748]` на `127.0.0.1`, принимает `GET /status` и
+`POST /heartbeat`. Порт хранится в `AppState.server_port`. CORS открыт.
+
+**Расширение** (`resources/extension/*`, MV3): `background.js` находит порт
+(пробует `/status`) и шлёт `POST /heartbeat {type,url,title}` на смену
+вкладки/окна и по таймеру (`chrome.alarms`). Права: `tabs`, `alarms`,
+`host_permissions: http://127.0.0.1/*`. Стабильный ID — закреплённый `key`.
+
+**Мост через файл.** Сервер пишет `browser_heartbeat.json` в app_data_dir
+(`bridge.rs`). Capture loop читает его, когда в фокусе браузер, и предпочитает
+точный URL парсингу заголовка (fallback — `browser::parse_title`).
+
+`export_extension` выгружает встроенные файлы расширения в «Загрузки».
+Ключевые файлы: `src-tauri/src/{server,extension,bridge}.rs`,
+`src-tauri/resources/extension/*`, UI — `src/views/ExtensionView.tsx`.
+
 ## Известные ограничения (задокументированные)
 
-1. **Browser URL из title.** Полный URL виден в заголовке вкладки только у
-   части сайтов. Domain-уровень (telegram.org) надёжно. Решение «Native
-   Messaging расширение» отложено как Phase 4 — принимается после оценки
-   точности парсинга заголовков.
+1. **Browser URL без расширения.** Если расширение не установлено, URL берётся из
+   заголовка вкладки (виден лишь у части сайтов); домен — надёжно. С расширением
+   (Phase 4, см. выше) URL/домен точные.
 
 2. **Idle vs просмотр видео.** `GetLastInputInfo` не учитывает просмотр видео
    (мышь не двигается, пользователь активен, но idle растёт). Future:
@@ -89,10 +117,14 @@ React (TS)  ──invoke──▶  Tauri Commands (Rust)  ──▶  SQLite
 
 ## Фазы проекта
 - **0. Каркас** ✅ — Tauri+React+Vite, SQLite init, Discord-тема, базовый shell
-- **1. Capture Engine** ✅ — window/idle/browser, запись интервалов
+- **1. Capture Engine** ✅ — window/idle/browser, запись интервалов, категоризация
+  при записи + bulk-пересчёт
 - **2. Категоризация** ✅ — правила + CRUD, сид данных
-- **3. UI Дашборд** — в работе: наполнение Dashboard/Categories/Settings данными
-- **4. (опц.)** Native Messaging расширение
+- **3. UI Дашборд** ✅ — дашборд с KPI/графиками (SVG), журнал «Активность»,
+  CRUD категорий, настройки, вкладка «Расширение»; графики свои на SVG (без
+  внешних библиотек), темизация только через `theme.css`
+- **4. Native Messaging расширение** ✅ — Chromium-расширение + native-host,
+  точные URL/домены (см. раздел «Браузерное расширение»)
 
 ## Договорённости по коду
 

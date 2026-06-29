@@ -10,7 +10,14 @@ import { LineChart, type LineSeries } from "@/components/charts/LineChart";
 import { useAppStore } from "@/stores/app";
 import { useAsyncData } from "@/lib/hooks";
 import { useT } from "@/lib/i18n";
-import { ensureAppIcon, getActivities, getSummary, listCategoryRules } from "@/lib/tauri";
+import {
+  ensureAppIcon,
+  getActivities,
+  getRangeStats,
+  getSummary,
+  getTimeline,
+  listCategoryRules,
+} from "@/lib/tauri";
 import {
   appLabel,
   CHART_VARS,
@@ -19,12 +26,16 @@ import {
   formatDuration,
   formatDurationShort,
   formatTime,
+  fromDateInput,
+  isSameLocalDay,
   rangeFor,
+  resolveRange,
+  startOfDay,
   type RangePreset,
 } from "@/lib/format";
-import type { Activity } from "@/types/activity";
+import type { Activity, TimelineBucket } from "@/types/activity";
 
-const POLL = 15000;
+const POLL = 30000;
 
 // Период для карточки «Топ приложений» — независимый от глобального диапазона.
 type AppsPeriod = RangePreset | "all";
@@ -41,25 +52,27 @@ function rangeForApps(p: AppsPeriod): { from: number; to: number } {
 export function DashboardView() {
   const t = useT();
   const range = useAppStore((s) => s.range);
+  const customFrom = useAppStore((s) => s.customFrom);
+  const customTo = useAppStore((s) => s.customTo);
   const refreshKey = useAppStore((s) => s.refreshKey);
-  const r = useMemo(() => rangeFor(range), [range, refreshKey]);
-  const deps = [range, refreshKey];
-
-  const apps = useAsyncData(() => getSummary(rangeFor(range), "app"), deps, POLL);
-  const domains = useAsyncData(() => getSummary(rangeFor(range), "domain"), deps, POLL);
-  const cats = useAsyncData(() => getSummary(rangeFor(range), "category"), deps, POLL);
-  const acts = useAsyncData(
-    () => {
-      const rr = rangeFor(range);
-      return getActivities({ from: rr.from, to: rr.to });
-    },
-    deps,
-    POLL,
+  const r = useMemo(
+    () => resolveRange(range, customFrom, customTo),
+    [range, customFrom, customTo, refreshKey],
   );
+  const deps = [range, customFrom, customTo, refreshKey];
+
+  const stats = useAsyncData(() => getRangeStats(r), deps, POLL);
+  const tl = useAsyncData(() => getTimeline(r, isSameLocalDay(r.from, r.to)), deps, POLL);
+  const apps = useAsyncData(() => getSummary(r, "app"), deps, POLL);
+  const domains = useAsyncData(() => getSummary(r, "domain"), deps, POLL);
+  const cats = useAsyncData(() => getSummary(r, "category"), deps, POLL);
+  const acts = useAsyncData(() => getActivities({ from: r.from, to: r.to }), deps, POLL);
   const rules = useAsyncData(listCategoryRules, deps, POLL);
 
   // Топ приложений — со своим фильтром периода (день/неделя/месяц/всё время).
-  const [appsPeriod, setAppsPeriod] = useState<AppsPeriod>(range);
+  const [appsPeriod, setAppsPeriod] = useState<AppsPeriod>(
+    range === "custom" ? "today" : range,
+  );
   const topApps = useAsyncData(
     () => getSummary(rangeForApps(appsPeriod), "app"),
     [appsPeriod, refreshKey],
@@ -85,12 +98,16 @@ export function DashboardView() {
 
   // ----- производные метрики из интервалов -----
   const list = acts.data ?? [];
-  const totalMs = list.reduce((s, a) => s + a.durationMs, 0);
-  const idleMs = list.filter((a) => a.isIdle).reduce((s, a) => s + a.durationMs, 0);
+  // KPI берём из SQL-агрегации (get_range_stats) — корректно и дёшево на любом
+  // диапазоне (не зависит от обрезанного LIMIT-ом списка интервалов).
+  const totalMs = stats.data?.totalMs ?? 0;
+  const idleMs = stats.data?.idleMs ?? 0;
   const activeMs = totalMs - idleMs;
   const appCount = (apps.data ?? []).filter((b) => b.key !== "(unknown)").length;
-  const switches = list.length;
+  const switches = stats.data?.intervals ?? 0;
   const idlePct = totalMs > 0 ? Math.round((idleMs / totalMs) * 100) : 0;
+  // Итог по загруженному списку — для панели подробностей (drill-down).
+  const listTotalMs = list.reduce((s, a) => s + a.durationMs, 0);
 
   // ----- цвета категорий из правил -----
   const catColor = useMemo(() => {
@@ -151,9 +168,18 @@ export function DashboardView() {
 
   // ----- таймлайн (мультисерийный) -----
   const timeline = useMemo(
-    () => buildTimelineSeries(list, range, r.from, selectedCats, catColor, t("dash.seriesTotal")),
+    () =>
+      seriesFromBuckets(
+        tl.data ?? [],
+        r.from,
+        r.to,
+        isSameLocalDay(r.from, r.to),
+        selectedCats,
+        catColor,
+        t("dash.seriesTotal"),
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [acts.data, range, selectedCats, catColor],
+    [tl.data, r.from, r.to, selectedCats, catColor],
   );
 
   const recent = list.slice(0, 10);
@@ -190,7 +216,9 @@ export function DashboardView() {
         {/* Таймлайн — герой во всю ширину */}
         <Card
           title={t("dash.timeline")}
-          subtitle={range === "today" ? t("dash.timelineByHour") : t("dash.timelineByDay")}
+          subtitle={
+            isSameLocalDay(r.from, r.to) ? t("dash.timelineByHour") : t("dash.timelineByDay")
+          }
         >
           {timelineCats.length > 0 && (
             <div className="tl-cats">
@@ -315,9 +343,9 @@ export function DashboardView() {
             kind={detail.kind}
             value={detail.value}
             activities={list}
-            range={range}
             from={r.from}
-            totalAll={totalMs}
+            to={r.to}
+            totalAll={listTotalMs}
           />
         )}
       </Drawer>
@@ -330,15 +358,15 @@ function DetailBody({
   kind,
   value,
   activities,
-  range,
   from,
+  to,
   totalAll,
 }: {
   kind: "app" | "domain" | "category";
   value: string;
   activities: Activity[];
-  range: string;
   from: number;
+  to: number;
   totalAll: number;
 }) {
   const t = useT();
@@ -372,7 +400,7 @@ function DetailBody({
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 
-  const timeline = buildTimelineSeries(filtered, range, from, new Set(), new Map(), t("dash.seriesTotal"));
+  const timeline = buildTimelineSeries(filtered, from, to, new Set(), new Map(), t("dash.seriesTotal"));
   const innerTitle =
     kind === "app" ? t("detail.windows") : kind === "domain" ? t("detail.pages") : t("detail.apps");
 
@@ -411,8 +439,8 @@ function DetailBody({
 // одной линии на каждую выбранную категорию. Ось X: «HH:00» для дня, даты — иначе.
 function buildTimelineSeries(
   list: Activity[],
-  range: string,
   from: number,
+  to: number,
   selected: Set<string>,
   catColor: Map<string, string>,
   totalLabel: string,
@@ -423,25 +451,24 @@ function buildTimelineSeries(
   let labelEvery: number;
   let highlightIndex: number;
 
-  if (range === "today") {
+  // Один календарный день → разбивка по часам; иначе → по дням.
+  if (isSameLocalDay(from, to)) {
     buckets = 25; // часы 00..24 (24:00 замыкает сутки)
     labelOf = (h) => `${String(h).padStart(2, "0")}:00`;
     indexOf = (ms) => new Date(ms).getHours();
     labelEvery = 3;
-    highlightIndex = new Date().getHours();
+    // Подсветка текущего часа — только когда смотрим сегодняшний день.
+    highlightIndex = isSameLocalDay(from, Date.now()) ? new Date().getHours() : -1;
   } else {
-    const days = range === "week" ? 7 : 30;
+    const start = startOfDay(from);
+    const days = Math.max(1, Math.floor((startOfDay(to) - start) / 86400000) + 1);
     buckets = days;
-    const start = new Date(from);
-    start.setHours(0, 0, 0, 0);
-    labelOf = (i) => {
-      const d = new Date(start);
-      d.setDate(d.getDate() + i);
-      return formatDay(d.getTime());
-    };
-    indexOf = (ms) => Math.floor((ms - start.getTime()) / 86400000);
+    labelOf = (i) => formatDay(start + i * 86400000);
+    indexOf = (ms) => Math.floor((ms - start) / 86400000);
     labelEvery = days > 14 ? 5 : 1;
-    highlightIndex = days - 1;
+    // Подсветка сегодняшнего дня, если он в диапазоне; иначе — последний бакет.
+    const idxNow = Math.floor((Date.now() - start) / 86400000);
+    highlightIndex = idxNow >= 0 && idxNow < days ? idxNow : days - 1;
   }
 
   const total: number[] = new Array(buckets).fill(0);
@@ -467,6 +494,68 @@ function buildTimelineSeries(
       label: name,
       color: catColor.get(name) ?? colorForKey(name),
       values: perCat.get(name) ?? (new Array(buckets).fill(0) as number[]),
+    });
+  }
+  return { xLabels, series, labelEvery, highlightIndex };
+}
+
+// ----- построение серий из агрегированных бакетов (основной таймлайн) -----
+// Данные уже сгруппированы в SQL (get_timeline): по часам "00".."23" или по
+// датам "YYYY-MM-DD", с разбивкой по категориям. Здесь только раскладываем их
+// на оси и собираем выбранные категории — без выгрузки сырых интервалов.
+function seriesFromBuckets(
+  rows: TimelineBucket[],
+  from: number,
+  to: number,
+  hourly: boolean,
+  selected: Set<string>,
+  catColor: Map<string, string>,
+  totalLabel: string,
+): { xLabels: string[]; series: LineSeries[]; labelEvery: number; highlightIndex: number } {
+  let count: number;
+  let labelOf: (i: number) => string;
+  let indexOf: (bucket: string) => number;
+  let labelEvery: number;
+  let highlightIndex: number;
+
+  if (hourly) {
+    count = 25; // часы 00..24 (24:00 замыкает сутки)
+    labelOf = (h) => `${String(h).padStart(2, "0")}:00`;
+    indexOf = (b) => parseInt(b, 10);
+    labelEvery = 3;
+    highlightIndex = isSameLocalDay(from, Date.now()) ? new Date().getHours() : -1;
+  } else {
+    const start = startOfDay(from);
+    const days = Math.max(1, Math.floor((startOfDay(to) - start) / 86400000) + 1);
+    count = days;
+    labelOf = (i) => formatDay(start + i * 86400000);
+    indexOf = (b) => Math.round((fromDateInput(b) - start) / 86400000);
+    labelEvery = days > 14 ? 5 : 1;
+    const idxNow = Math.floor((Date.now() - start) / 86400000);
+    highlightIndex = idxNow >= 0 && idxNow < days ? idxNow : days - 1;
+  }
+
+  const total: number[] = new Array(count).fill(0);
+  const perCat = new Map<string, number[]>();
+  for (const name of selected) perCat.set(name, new Array(count).fill(0) as number[]);
+
+  for (const row of rows) {
+    const idx = indexOf(row.bucket);
+    if (idx < 0 || idx >= count) continue;
+    total[idx] += row.ms;
+    if (row.category && perCat.has(row.category)) perCat.get(row.category)![idx] += row.ms;
+  }
+
+  const xLabels = Array.from({ length: count }, (_, i) => labelOf(i));
+  const series: LineSeries[] = [
+    { key: "__total", label: totalLabel, color: "var(--accent)", values: total, primary: true },
+  ];
+  for (const name of selected) {
+    series.push({
+      key: name,
+      label: name,
+      color: catColor.get(name) ?? colorForKey(name),
+      values: perCat.get(name) ?? (new Array(count).fill(0) as number[]),
     });
   }
   return { xLabels, series, labelEvery, highlightIndex };

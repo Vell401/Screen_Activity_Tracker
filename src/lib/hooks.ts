@@ -34,19 +34,23 @@ export function useAsyncData<T>(
   const loaderRef = useRef(loader);
   loaderRef.current = loader;
   const mounted = useRef(true);
+  // Поколение запроса: результат устаревшего запроса (например, начатого до
+  // смены deps/диапазона) игнорируется, чтобы не перетереть свежие данные.
+  const genRef = useRef(0);
 
   const run = useCallback(async (showSpinner: boolean) => {
+    const myGen = ++genRef.current;
     if (showSpinner) setLoading(true);
     try {
       const result = await loaderRef.current();
-      if (mounted.current) {
+      if (mounted.current && myGen === genRef.current) {
         setData(result);
         setError(null);
       }
     } catch (e) {
-      if (mounted.current) setError(String(e));
+      if (mounted.current && myGen === genRef.current) setError(String(e));
     } finally {
-      if (mounted.current) setLoading(false);
+      if (mounted.current && myGen === genRef.current) setLoading(false);
     }
   }, []);
 
@@ -61,8 +65,19 @@ export function useAsyncData<T>(
 
   useEffect(() => {
     if (pollMs == null) return;
-    const id = setInterval(() => run(false), pollMs);
-    return () => clearInterval(id);
+    // Не опрашиваем, когда окно скрыто/свёрнуто в трей — лишняя фоновая нагрузка.
+    // При возврате фокуса сразу обновляемся.
+    const id = setInterval(() => {
+      if (!document.hidden) run(false);
+    }, pollMs);
+    const onVisible = () => {
+      if (!document.hidden) run(false);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollMs, ...deps]);
 

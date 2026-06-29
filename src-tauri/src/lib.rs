@@ -85,6 +85,7 @@ pub fn run() {
                 db_path,
                 server_port: AtomicU16::new(0),
                 minimize_to_tray: AtomicBool::new(minimize_to_tray),
+                open_interval: Mutex::new(None),
             });
             app.manage(state.clone());
 
@@ -144,6 +145,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_activities,
             commands::get_summary,
+            commands::get_range_stats,
+            commands::get_timeline,
             commands::list_category_rules,
             commands::upsert_category_rule,
             commands::delete_category_rule,
@@ -166,6 +169,15 @@ pub fn run() {
             commands::set_autostart,
             commands::choose_db_location,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // При выходе сбрасываем открытый интервал, чтобы не потерять
+            // последний (часто самый длинный) сегмент активности.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app_handle.try_state::<Arc<AppState>>() {
+                    capture::flush_open_interval(state.inner());
+                }
+            }
+        });
 }

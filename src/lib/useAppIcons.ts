@@ -1,156 +1,91 @@
 /**
- * Хук для подгрузки реальных иконок приложений.
+ * Иконки приложений/сайтов из ОБЩЕГО (модульного) кеша.
  *
- * Использует двухуровневый подход:
- *   1. Bulk-запрос метаданных (AppIcon) по списку имён.
- *   2. По требованию подтягиваем PNG-данные (`data:image/png;base64,...`) для
- *      конкретного имени, лениво.
+ * Кеш живёт вне React, поэтому переживает перемонтирование компонентов и общий
+ * для всех экземпляров `AppIcon`:
+ *   - запросы дедуплицируются (один и тот же ключ грузится один раз);
+ *   - принудительный повтор (ретрай для поздно приехавшего фавикона) троттлится;
+ *   - при готовности ключа перерисовываются только подписанные на него компоненты.
  *
- * Кеш в памяти: `dataUrls: Map<appName, string|null>` — после первой
- * удачной/неудачной попытки повторно не дёргаем бэкенд.
+ * Иконки извлекаются на бэкенде (из .exe для приложений, из фавикона для сайтов)
+ * и кешируются в SQLite + на диск; здесь — только чтение data URL по ключу.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getAppIconData, getAppIcons } from "@/lib/tauri";
+import { useCallback, useEffect, useReducer } from "react";
+import { getAppIconData } from "@/lib/tauri";
 
-interface IconState {
-  /** Метаданные иконок, загруженные bulk-запросом. */
-  meta: Map<string, { iconHash: string; updatedAt: number }>;
-  /** Data URLs по имени процесса (null = пытались, но не нашли). */
-  dataUrls: Map<string, string | null>;
-  /** Какие имена сейчас грузятся. */
-  loading: Set<string>;
+/** Ключ -> data URL (готов) | null (пробовали, иконки нет). */
+const cache = new Map<string, string | null>();
+/** Ключи, по которым запрос уже в полёте. */
+const inflight = new Set<string>();
+/** Время последней попытки по ключу — для троттлинга принудительных повторов. */
+const lastTry = new Map<string, number>();
+/** Подписчики по ключу (компоненты, которым нужна перерисовка при готовности). */
+const keyListeners = new Map<string, Set<() => void>>();
+
+/** Не дёргать бэкенд по одному ключу чаще, чем раз в N мс (для force-ретраев). */
+const FORCE_THROTTLE_MS = 5000;
+
+const norm = (s: string) => s.trim().toLowerCase();
+
+function notifyKey(key: string) {
+  const set = keyListeners.get(key);
+  if (set) for (const l of set) l();
 }
 
-const EMPTY_STATE: IconState = {
-  meta: new Map(),
-  dataUrls: new Map(),
-  loading: new Set(),
-};
+function fetchIcon(key: string, force: boolean) {
+  if (!key || inflight.has(key)) return;
+  if (!force && cache.has(key)) return; // уже знаем результат
+  if (force && Date.now() - (lastTry.get(key) ?? 0) < FORCE_THROTTLE_MS) return;
+  inflight.add(key);
+  lastTry.set(key, Date.now());
+  getAppIconData(key)
+    .then((url) => cache.set(key, url ?? null))
+    .catch(() => cache.set(key, null))
+    .finally(() => {
+      inflight.delete(key);
+      notifyKey(key);
+    });
+}
 
 /**
- * Хук принимает массив имён процессов и возвращает:
- *   - `metaFor(name)` — есть ли метаданные в БД
- *   - `urlFor(name)`  — data URL или null
- *   - `ensure(name)`   — подтянуть data URL по требованию (если ещё не)
- *   - `reload(names)`  — перезагрузить метаданные по списку
+ * Хук иконок. Принимает список ключей (имена процессов / "site:<домен>") и
+ * возвращает `ensure(name, force?)` и `urlFor(name)`.
  */
 export function useAppIcons(names: string[]) {
-  const [state, setState] = useState<IconState>(EMPTY_STATE);
-  const mountedRef = useRef(true);
+  const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
 
-  // Нормализация имён: lower-case + trim, как на бэкенде.
-  const norm = (s: string) => s.trim().toLowerCase();
+  // Стабильная сигнатура списка ключей — пере-подписка только при его изменении.
+  const keysSig = Array.from(new Set(names.map(norm).filter(Boolean))).sort().join("|");
 
-  // Поддерживаем стабильный список уникальных имён.
-  const uniqKey = Array.from(new Set(names.map(norm).filter(Boolean))).sort().join("|");
-  const uniqNames = uniqKey ? uniqKey.split("|") : [];
-
-  // Bulk-загрузка метаданных при изменении списка имён.
   useEffect(() => {
-    mountedRef.current = true;
-    if (uniqNames.length === 0) {
-      setState((s) => ({ ...s, meta: new Map() }));
-      return;
+    const ks = keysSig ? keysSig.split("|") : [];
+    const cb = () => forceUpdate();
+    for (const k of ks) {
+      let set = keyListeners.get(k);
+      if (!set) {
+        set = new Set();
+        keyListeners.set(k, set);
+      }
+      set.add(cb);
     }
-    let cancelled = false;
-    getAppIcons(uniqNames)
-      .then((rows) => {
-        if (cancelled || !mountedRef.current) return;
-        setState((s) => {
-          const next = new Map(s.meta);
-          for (const r of rows) {
-            next.set(norm(r.appName), { iconHash: r.iconHash, updatedAt: r.updatedAt });
-          }
-          // Убираем из meta имена, которых больше нет в списке.
-          const keep = new Set(uniqNames.map(norm));
-          for (const k of Array.from(next.keys())) {
-            if (!keep.has(k)) next.delete(k);
-          }
-          return { ...s, meta: next };
-        });
-      })
-      .catch(() => {});
     return () => {
-      cancelled = true;
+      for (const k of ks) {
+        const set = keyListeners.get(k);
+        set?.delete(cb);
+        if (set && set.size === 0) keyListeners.delete(k);
+      }
     };
-    // uniqKey стабилен по содержимому → пере-запрос только при изменении списка.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uniqKey]);
-
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+  }, [keysSig]);
 
   const ensure = useCallback((name: string, force = false) => {
+    fetchIcon(norm(name), force);
+  }, []);
+
+  const urlFor = useCallback((name: string): string | undefined => {
     const key = norm(name);
-    if (!key) return;
-    // `force` позволяет перепроверить кеш для домена, чей фавикон мог приехать
-    // от расширения уже после первой (неудачной) попытки.
-    let shouldFetch = false;
-    setState((s) => {
-      if (s.loading.has(key)) return s; // уже грузится
-      if (!force && s.dataUrls.has(key)) return s; // уже пытались
-      shouldFetch = true;
-      const loading = new Set(s.loading);
-      loading.add(key);
-      return { ...s, loading };
-    });
-    if (!shouldFetch) return;
-    getAppIconData(key)
-      .then((url) => {
-        if (!mountedRef.current) return;
-        setState((s) => {
-          const dataUrls = new Map(s.dataUrls);
-          dataUrls.set(key, url ?? null);
-          const loading = new Set(s.loading);
-          loading.delete(key);
-          return { ...s, dataUrls, loading };
-        });
-      })
-      .catch(() => {
-        if (!mountedRef.current) return;
-        setState((s) => {
-          const dataUrls = new Map(s.dataUrls);
-          dataUrls.set(key, null);
-          const loading = new Set(s.loading);
-          loading.delete(key);
-          return { ...s, dataUrls, loading };
-        });
-      });
+    if (inflight.has(key)) return undefined; // грузится
+    return cache.get(key) ?? undefined; // null/нет -> undefined
   }, []);
 
-  const urlFor = useCallback(
-    (name: string): string | undefined | "loading" => {
-      const key = norm(name);
-      if (state.loading.has(key)) return "loading";
-      if (state.dataUrls.has(key)) return state.dataUrls.get(key) ?? undefined;
-      return undefined;
-    },
-    [state.dataUrls, state.loading],
-  );
-
-  const metaFor = useCallback(
-    (name: string) => state.meta.get(norm(name)),
-    [state.meta],
-  );
-
-  const reload = useCallback((nextNames: string[]) => {
-    if (nextNames.length === 0) return;
-    getAppIcons(nextNames.map(norm))
-      .then((rows) => {
-        if (!mountedRef.current) return;
-        setState((s) => {
-          const next = new Map(s.meta);
-          for (const r of rows) {
-            next.set(norm(r.appName), { iconHash: r.iconHash, updatedAt: r.updatedAt });
-          }
-          return { ...s, meta: next };
-        });
-      })
-      .catch(() => {});
-  }, []);
-
-  return { metaFor, urlFor, ensure, reload };
+  return { ensure, urlFor };
 }

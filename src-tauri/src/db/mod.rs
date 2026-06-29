@@ -10,7 +10,10 @@ use std::sync::Mutex;
 
 use rusqlite::Connection;
 
-use crate::db::models::{Activity, ActivityFilters, CategoryRule, SettingEntry, SummaryBucket, SummaryGroupBy};
+use crate::db::models::{
+    Activity, ActivityFilters, CategoryRule, RangeStats, SettingEntry, SummaryBucket,
+    SummaryGroupBy, TimelineBucket,
+};
 
 /// Текст схемы из schema.sql, встроенный в бинарник через include_str!.
 const SCHEMA_SQL: &str = include_str!("schema.sql");
@@ -19,7 +22,7 @@ const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// Применяются при первом старте (INSERT OR IGNORE — не перезаписывают пользовательские).
 const DEFAULT_SETTINGS: &[(&str, &str)] = &[
     ("sample_interval_ms", "5000"),
-    ("idle_threshold_ms", "120000"),
+    ("idle_threshold_ms", "180000"),
     ("tracking_enabled", "true"),
     ("minimize_to_tray", "true"),
     ("language", "en"),
@@ -61,8 +64,9 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     conn.pragma_update(None, "foreign_keys", "ON")?;
     apply_migrations(&conn)?;
     seed_defaults(&conn)?;
-    // Приводим category_id всех строк в соответствие текущим правилам.
-    recategorize_all(&conn)?;
+    // Пересчёт категорий только при изменении правил (гейт по сигнатуре) —
+    // иначе на больших БД каждый старт делал бы дорогой UPDATE всех строк.
+    recategorize_if_rules_changed(&conn)?;
     Ok(conn)
 }
 
@@ -226,6 +230,63 @@ pub fn query_summary(
     Ok(out)
 }
 
+/// Суммарные показатели за диапазон (KPI дашборда). Считаем в SQL — без выгрузки
+/// строк, поэтому корректно и дёшево даже на сотнях тысяч интервалов.
+pub fn query_range_stats(conn: &Connection, from: i64, to: i64) -> rusqlite::Result<RangeStats> {
+    conn.query_row(
+        "SELECT COALESCE(SUM(duration_ms), 0),
+                COALESCE(SUM(CASE WHEN is_idle = 1 THEN duration_ms ELSE 0 END), 0),
+                COUNT(*)
+         FROM activities
+         WHERE ended_at >= ?1 AND started_at <= ?2",
+        rusqlite::params![from, to],
+        |r| {
+            Ok(RangeStats {
+                total_ms: r.get(0)?,
+                idle_ms: r.get(1)?,
+                intervals: r.get(2)?,
+            })
+        },
+    )
+}
+
+/// Бакеты таймлайна (активное время) по часам или дням, с разбивкой по
+/// категориям. Локальные границы суток считает SQLite (strftime ... 'localtime'),
+/// без выгрузки сырых строк — корректно и компактно на любых диапазонах.
+pub fn query_timeline(
+    conn: &Connection,
+    from: i64,
+    to: i64,
+    hourly: bool,
+) -> rusqlite::Result<Vec<TimelineBucket>> {
+    let bucket_expr = if hourly {
+        "strftime('%H', a.started_at / 1000, 'unixepoch', 'localtime')"
+    } else {
+        "strftime('%Y-%m-%d', a.started_at / 1000, 'unixepoch', 'localtime')"
+    };
+    let sql = format!(
+        "SELECT {bucket} AS b, COALESCE(cr.name, '') AS cat, SUM(a.duration_ms) AS ms
+         FROM activities a
+         LEFT JOIN category_rules cr ON cr.id = a.category_id
+         WHERE a.ended_at >= ?1 AND a.started_at <= ?2 AND a.is_idle = 0
+         GROUP BY b, cat",
+        bucket = bucket_expr
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params![from, to], |r| {
+        Ok(TimelineBucket {
+            bucket: r.get(0)?,
+            category: r.get(1)?,
+            ms: r.get(2)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 // ----- queries: category_rules --------------------------------------------
 
 pub fn list_rules(conn: &Connection) -> rusqlite::Result<Vec<CategoryRule>> {
@@ -334,9 +395,13 @@ pub fn find_category_id(
 pub fn recategorize_all(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute("UPDATE activities SET category_id = NULL", [])?;
 
+    // Порядок применения должен давать тот же итог, что и find_category_id
+    // (priority DESC, name ASC, первое совпадение). Применяем по возрастанию
+    // приоритета (высший — последним, перезаписывает) и name DESC (меньшее имя —
+    // последним, выигрывает), чтобы последний UPDATE совпал с «первым» в live.
     let rules: Vec<(i64, String, String)> = {
         let mut stmt = conn.prepare(
-            "SELECT id, match_type, pattern FROM category_rules ORDER BY priority ASC, id ASC",
+            "SELECT id, match_type, pattern FROM category_rules ORDER BY priority ASC, name DESC",
         )?;
         let mapped = stmt.query_map([], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
@@ -372,6 +437,50 @@ pub fn recategorize_all(conn: &Connection) -> rusqlite::Result<()> {
             }
             _ => {}
         }
+    }
+    Ok(())
+}
+
+/// Сигнатура текущего набора правил — для гейта пересчёта категорий на старте.
+fn rules_sig(conn: &Connection) -> rusqlite::Result<String> {
+    let mut stmt = conn.prepare(
+        "SELECT id, match_type, pattern, priority, name FROM category_rules ORDER BY id",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(format!(
+            "{}:{}:{}:{}:{}",
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(3)?,
+            r.get::<_, String>(4)?,
+        ))
+    })?;
+    let mut parts = Vec::new();
+    for row in rows {
+        parts.push(row?);
+    }
+    Ok(parts.join("\n"))
+}
+
+/// Пересчитать категории всех строк и запомнить текущую сигнатуру правил.
+/// Зовётся командами при изменении правил, чтобы следующий старт не повторял
+/// дорогой пересчёт зря.
+pub fn recategorize_all_and_mark(conn: &Connection) -> rusqlite::Result<()> {
+    recategorize_all(conn)?;
+    let sig = rules_sig(conn)?;
+    set_setting(conn, "rules_sig", &sig)?;
+    Ok(())
+}
+
+/// Пересчитать категории только если правила изменились с прошлого раза.
+/// Вызывается на старте: на больших БД пропускает дорогой UPDATE всех строк,
+/// когда правила не менялись (обычный случай) — холодный старт остаётся быстрым.
+pub fn recategorize_if_rules_changed(conn: &Connection) -> rusqlite::Result<()> {
+    let sig = rules_sig(conn)?;
+    if get_setting(conn, "rules_sig")?.as_deref() != Some(sig.as_str()) {
+        recategorize_all(conn)?;
+        set_setting(conn, "rules_sig", &sig)?;
     }
     Ok(())
 }

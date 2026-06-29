@@ -24,7 +24,7 @@ impl Default for CaptureConfig {
     fn default() -> Self {
         Self {
             sample_interval_ms: 5000,
-            idle_threshold_ms: 120_000,
+            idle_threshold_ms: 180_000,
             tracking_enabled: true,
         }
     }

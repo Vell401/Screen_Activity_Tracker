@@ -170,10 +170,14 @@ fn store_favicon(state: &AppState, domain: &str, png: &[u8]) {
     if png[..8] != [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a] {
         return;
     }
-    let key = domain.trim().to_ascii_lowercase();
-    if key.is_empty() {
+    let host = domain.trim().to_ascii_lowercase();
+    if host.is_empty() {
         return;
     }
+    // Префикс "site:" отделяет фавиконы сайтов от иконок процессов в одной
+    // таблице app_icons — иначе присланный расширением домен (под контролем
+    // клиента) мог бы перезаписать иконку настоящего приложения.
+    let key = format!("site:{host}");
 
     let hash = crate::icons::sha256_hex(png);
     if crate::icons::write_to_disk(&state.data_dir, &hash, png).is_err() {

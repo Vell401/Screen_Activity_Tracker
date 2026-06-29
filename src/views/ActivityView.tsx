@@ -9,23 +9,25 @@ import {
   colorForKey,
   formatDateTime,
   formatDuration,
-  rangeFor,
+  resolveRange,
 } from "@/lib/format";
 
 export function ActivityView() {
   const t = useT();
   const range = useAppStore((s) => s.range);
+  const customFrom = useAppStore((s) => s.customFrom);
+  const customTo = useAppStore((s) => s.customTo);
   const refreshKey = useAppStore((s) => s.refreshKey);
 
   const acts = useAsyncData(
     () => {
-      const rr = rangeFor(range);
+      const rr = resolveRange(range, customFrom, customTo);
       return getActivities({ from: rr.from, to: rr.to });
     },
-    [range, refreshKey],
+    [range, customFrom, customTo, refreshKey],
     15000,
   );
-  const rules = useAsyncData(listCategoryRules, []);
+  const rules = useAsyncData(listCategoryRules, [refreshKey]);
 
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>("all");

@@ -114,6 +114,26 @@ pub struct DateRange {
     pub to: i64,
 }
 
+/// Агрегированные показатели за диапазон (KPI дашборда). Считаются в SQL, без
+/// выгрузки строк, поэтому корректны и дёшевы даже на годах данных.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RangeStats {
+    pub total_ms: i64,
+    pub idle_ms: i64,
+    pub intervals: i64,
+}
+
+/// Бакет таймлайна: ключ (час "00".."23" или дата "YYYY-MM-DD"), имя категории
+/// ("" — без категории) и сумма активного времени за бакет.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineBucket {
+    pub bucket: String,
+    pub category: String,
+    pub ms: i64,
+}
+
 /// Пара ключ-значение в settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingEntry {

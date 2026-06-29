@@ -9,7 +9,7 @@
 /// Сколько миллисекунд прошло с последнего ввода (мышь/клавиатура).
 #[cfg(windows)]
 pub fn millis_since_last_input() -> Option<u64> {
-    use windows::Win32::System::SystemInformation::GetTickCount64;
+    use windows::Win32::System::SystemInformation::GetTickCount;
     use windows::Win32::UI::Input::KeyboardAndMouse::GetLastInputInfo;
     use windows::Win32::UI::Input::KeyboardAndMouse::LASTINPUTINFO;
 
@@ -19,11 +19,13 @@ pub fn millis_since_last_input() -> Option<u64> {
             dwTime: 0,
         };
         if GetLastInputInfo(&mut info).as_bool() {
-            let now = GetTickCount64();
-            // dwTime — это ms с старта системы, в той же шкале что GetTickCount.
-            let last = info.dwTime as u64;
-            // Защита от гонки/оборачивания.
-            now.checked_sub(last)
+            // dwTime и GetTickCount — оба u32 (ms с старта системы, одна шкала).
+            // wrapping_sub корректно считает разницу через 32-битное
+            // переполнение (~каждые 49.7 дней). Если брать GetTickCount64
+            // (не оборачивается), после оборота dwTime разница станет
+            // гигантской и всё начнёт считаться простоем.
+            let now = GetTickCount();
+            Some(now.wrapping_sub(info.dwTime) as u64)
         } else {
             None
         }

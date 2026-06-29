@@ -62,6 +62,20 @@ export interface DateRange {
   to: number; // unix ms
 }
 
+/** Агрегированные показатели за диапазон (KPI дашборда). Зеркало RangeStats в Rust. */
+export interface RangeStats {
+  totalMs: number;
+  idleMs: number;
+  intervals: number;
+}
+
+/** Бакет таймлайна. Зеркало TimelineBucket в Rust. */
+export interface TimelineBucket {
+  bucket: string; // "00".."23" (час) или "YYYY-MM-DD" (день)
+  category: string; // "" — без категории
+  ms: number;
+}
+
 /** Пара ключ-значение в таблице settings. */
 export interface SettingEntry {
   key: string;

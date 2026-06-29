@@ -329,9 +329,11 @@ export function AppIcon({ name, domain, size = 28 }: AppIconProps): JSX.Element 
 
   const dom = domain ? normDomain(domain) : "";
   const appNorm = normName(name);
-  // Ключ кеша бэкенда: lower-case + trim, но БЕЗ среза ".exe" — точно как
-  // `icons::normalize_app_name` в Rust. Иначе промах кеша (иконки «не грузятся»).
-  const iconKey = name.trim().toLowerCase();
+  // Ключ кеша бэкенда. Для домена — "site:<домен>" (фавиконы хранятся под этим
+  // префиксом, чтобы не пересекаться с иконками процессов в app_icons). Для
+  // приложения — имя процесса в нижнем регистре (как `icons::normalize_app_name`
+  // в Rust, БЕЗ среза ".exe"), иначе промах кеша.
+  const iconKey = dom ? `site:${dom}` : name.trim().toLowerCase();
   // Сначала ищем глиф по полному хосту, затем — по SLD (второй уровень домена),
   // чтобы yandex.ru/web.telegram.org/support.claude.com тоже находили бренд-глиф.
   const domGlyph = dom ? lookup(dom) ?? lookup(domainLabel(dom)) : undefined;

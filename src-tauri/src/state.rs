@@ -26,6 +26,9 @@ pub struct AppState {
     pub server_port: AtomicU16,
     /// Прятать окно в трей при закрытии вместо полного выхода.
     pub minimize_to_tray: AtomicBool,
+    /// Текущий открытый (ещё не записанный) интервал активности. Хранится здесь,
+    /// чтобы capture loop и обработчик выхода могли его сбросить в БД.
+    pub open_interval: Mutex<Option<crate::capture::OpenInterval>>,
 }
 
 impl AppState {

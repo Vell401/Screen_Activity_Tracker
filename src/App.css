@@ -47,3 +47,35 @@
   overflow-y: auto;
   padding: 20px;
 }
+
+/* Поля выбора даты (произвольный день / промежуток) в шапке. */
+.app__range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dateinput {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-bright);
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+.dateinput:hover {
+  border-color: var(--border-normal);
+}
+.dateinput:focus {
+  border-color: var(--accent);
+}
+/* Активный пользовательский диапазон — подсвечиваем рамкой акцента. */
+.dateinput--active {
+  border-color: var(--accent);
+}
+.app__rangesep {
+  color: var(--text-muted);
+  font-size: 13px;
+}

@@ -9,8 +9,15 @@ import { ExtensionView } from "@/views/ExtensionView";
 import { SettingsView } from "@/views/SettingsView";
 import { useAppStore } from "@/stores/app";
 import { useAsyncData } from "@/lib/hooks";
-import { useT, type Lang } from "@/lib/i18n";
-import type { RangePreset } from "@/lib/format";
+import { useT, type Lang, type Theme } from "@/lib/i18n";
+import {
+  endOfDay,
+  fromDateInput,
+  resolveRange,
+  startOfDay,
+  toDateInput,
+  type RangeSel,
+} from "@/lib/format";
 import {
   getExtensionStatus,
   getSettings,
@@ -24,7 +31,12 @@ export default function App() {
   const setView = useAppStore((s) => s.setView);
   const range = useAppStore((s) => s.range);
   const setRange = useAppStore((s) => s.setRange);
+  const customFrom = useAppStore((s) => s.customFrom);
+  const customTo = useAppStore((s) => s.customTo);
+  const setCustomRange = useAppStore((s) => s.setCustomRange);
+  const lang = useAppStore((s) => s.lang);
   const setLang = useAppStore((s) => s.setLang);
+  const setTheme = useAppStore((s) => s.setTheme);
   const trackingEnabled = useAppStore((s) => s.trackingEnabled);
   const setTracking = useAppStore((s) => s.setTrackingEnabled);
   const bumpRefresh = useAppStore((s) => s.bumpRefresh);
@@ -37,9 +49,11 @@ export default function App() {
         if (tr) setTracking(tr.value === "true" || tr.value === "1");
         const lng = entries.find((x) => x.key === "language");
         if (lng && (lng.value === "en" || lng.value === "ru")) setLang(lng.value as Lang);
+        const th = entries.find((x) => x.key === "theme");
+        if (th && (th.value === "dark" || th.value === "light")) setTheme(th.value as Theme);
       })
       .catch(() => {});
-  }, [setTracking, setLang]);
+  }, [setTracking, setLang, setTheme]);
 
   // Статус расширения — для индикатора в сайдбаре.
   const ext = useAsyncData(getExtensionStatus, [], 5000);
@@ -62,13 +76,15 @@ export default function App() {
     extension: t("nav.extension"),
     settings: t("nav.settings"),
   };
-  const rangeOptions: { value: RangePreset; label: string }[] = [
+  const rangeOptions: { value: RangeSel; label: string }[] = [
     { value: "today", label: t("range.today") },
     { value: "week", label: t("range.week") },
     { value: "month", label: t("range.month") },
   ];
 
   const showRange = view === "dashboard" || view === "activity";
+  // Текущие границы (пресет или пользовательские) — отражаем их в полях даты.
+  const resolved = resolveRange(range, customFrom, customTo);
 
   return (
     <div className="app">
@@ -85,6 +101,38 @@ export default function App() {
             {showRange && (
               <>
                 <Segmented value={range} options={rangeOptions} onChange={setRange} />
+                <div className="app__range">
+                  <input
+                    type="date"
+                    lang={lang}
+                    className={"dateinput" + (range === "custom" ? " dateinput--active" : "")}
+                    value={toDateInput(resolved.from)}
+                    max={toDateInput(resolved.to)}
+                    title={t("range.from")}
+                    onChange={(e) => {
+                      const f = fromDateInput(e.target.value);
+                      if (Number.isNaN(f)) return;
+                      const from = startOfDay(f);
+                      setCustomRange(from, from > resolved.to ? endOfDay(f) : resolved.to);
+                    }}
+                  />
+                  <span className="app__rangesep">–</span>
+                  <input
+                    type="date"
+                    lang={lang}
+                    className={"dateinput" + (range === "custom" ? " dateinput--active" : "")}
+                    value={toDateInput(resolved.to)}
+                    min={toDateInput(resolved.from)}
+                    max={toDateInput(Date.now())}
+                    title={t("range.to")}
+                    onChange={(e) => {
+                      const tms = fromDateInput(e.target.value);
+                      if (Number.isNaN(tms)) return;
+                      const to = endOfDay(tms);
+                      setCustomRange(to < resolved.from ? startOfDay(tms) : resolved.from, to);
+                    }}
+                  />
+                </div>
                 <button
                   className="btn btn--icon btn--ghost"
                   onClick={bumpRefresh}

@@ -97,6 +97,61 @@ export function rangeFor(preset: RangePreset): { from: number; to: number } {
 
 // Подписи диапазона перенесены в i18n: range.today / range.week / range.month.
 
+/** Выбор диапазона: пресет или пользовательский интервал (день/промежуток). */
+export type RangeSel = RangePreset | "custom";
+
+/**
+ * Границы активного диапазона. Для пресета — {@link rangeFor}; для "custom" —
+ * заданные пользователем from/to (см. стор: customFrom/customTo).
+ */
+export function resolveRange(
+  sel: RangeSel,
+  customFrom: number,
+  customTo: number,
+): { from: number; to: number } {
+  return sel === "custom" ? { from: customFrom, to: customTo } : rangeFor(sel);
+}
+
+/** Локальная полночь начала суток. */
+export function startOfDay(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** Локальный конец суток (23:59:59.999). */
+export function endOfDay(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
+/** Один и тот же календарный день (локально)? */
+export function isSameLocalDay(a: number, b: number): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
+}
+
+/** unix ms → значение для `<input type="date">` (локальная дата YYYY-MM-DD). */
+export function toDateInput(ms: number): string {
+  const d = new Date(ms);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** Значение `<input type="date">` (YYYY-MM-DD) → локальная полночь (NaN при ошибке). */
+export function fromDateInput(s: string): number {
+  const [y, m, d] = s.split("-").map(Number);
+  if (!y || !m || !d) return NaN;
+  return new Date(y, m - 1, d).getTime();
+}
+
 /**
  * Палитра для графиков (значения берём из theme.css через CSS-переменные).
  * Возвращаем var(...) — браузер подставит цвет темы.

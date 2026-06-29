@@ -13,9 +13,11 @@ import type {
   DateRange,
   DbInfo,
   ExtensionStatus,
+  RangeStats,
   SettingEntry,
   SummaryBucket,
   SummaryGroupBy,
+  TimelineBucket,
 } from "@/types/activity";
 
 export async function getActivities(
@@ -29,6 +31,19 @@ export async function getSummary(
   groupBy: SummaryGroupBy,
 ): Promise<SummaryBucket[]> {
   return invoke<SummaryBucket[]>("get_summary", { range, groupBy });
+}
+
+/** Суммарные показатели за диапазон (KPI) — агрегируются в SQL. */
+export async function getRangeStats(range: DateRange): Promise<RangeStats> {
+  return invoke<RangeStats>("get_range_stats", { range });
+}
+
+/** Бакеты таймлайна (по часам/дням, с разбивкой по категориям) — агрегируются в SQL. */
+export async function getTimeline(
+  range: DateRange,
+  hourly: boolean,
+): Promise<TimelineBucket[]> {
+  return invoke<TimelineBucket[]>("get_timeline", { range, hourly });
 }
 
 export async function listCategoryRules(): Promise<CategoryRule[]> {

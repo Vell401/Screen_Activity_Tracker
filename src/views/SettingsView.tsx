@@ -3,7 +3,7 @@ import { Card } from "@/components/Card";
 import { Segmented, Toggle } from "@/components/ui";
 import { useAsyncData } from "@/lib/hooks";
 import { useAppStore } from "@/stores/app";
-import { useT, LANGS, type Lang } from "@/lib/i18n";
+import { useT, LANGS, THEME_VALUES, type Lang, type Theme } from "@/lib/i18n";
 import {
   chooseDbLocation,
   clearActivities,
@@ -20,7 +20,7 @@ import {
 import { formatBytes, formatDay } from "@/lib/format";
 
 const SAMPLE_OPTIONS = ["500", "1000", "2000", "5000"];
-const IDLE_OPTIONS = ["30000", "60000", "120000", "300000", "600000"];
+const IDLE_OPTIONS = ["30000", "60000", "120000", "180000", "300000", "600000"];
 
 export function SettingsView() {
   const t = useT();
@@ -31,6 +31,8 @@ export function SettingsView() {
   const bumpRefresh = useAppStore((s) => s.bumpRefresh);
   const lang = useAppStore((s) => s.lang);
   const setLang = useAppStore((s) => s.setLang);
+  const theme = useAppStore((s) => s.theme);
+  const setTheme = useAppStore((s) => s.setTheme);
 
   // Система: трей при закрытии, автозапуск, путь к БД.
   const autostartQ = useAsyncData(getAutostart, []);
@@ -59,6 +61,17 @@ export function SettingsView() {
       /* ignore */
     }
   };
+
+  const changeTheme = async (th: Theme) => {
+    setTheme(th);
+    try {
+      await updateSettings([{ key: "theme", value: th }]);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const themeOptions = THEME_VALUES.map((v) => ({ value: v, label: t(`theme.${v}`) }));
 
   const toggleTracking = async () => {
     const next = !trackingEnabled;
@@ -122,7 +135,14 @@ export function SettingsView() {
 
   return (
     <div className="settings">
-      <Card title={t("set.language")} subtitle={t("set.languageSub")}>
+      <Card title={t("set.appearance")} subtitle={t("set.appearanceSub")}>
+        <div className="settings__row">
+          <div className="settings__row-text">
+            <span className="settings__row-title">{t("set.theme")}</span>
+            <span className="settings__row-desc">{t("set.themeDesc")}</span>
+          </div>
+          <Segmented value={theme} options={themeOptions} onChange={changeTheme} />
+        </div>
         <div className="settings__row">
           <div className="settings__row-text">
             <span className="settings__row-title">{t("set.language")}</span>
@@ -162,7 +182,7 @@ export function SettingsView() {
             <label className="field__label">{t("set.idle")}</label>
             <select
               className="select"
-              value={getVal("idle_threshold_ms", "120000")}
+              value={getVal("idle_threshold_ms", "180000")}
               onChange={(e) => setVal("idle_threshold_ms", e.target.value)}
             >
               {IDLE_OPTIONS.map((v) => (

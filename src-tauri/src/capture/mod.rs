@@ -43,8 +43,9 @@ struct IntervalKey {
     is_idle: bool,
 }
 
-/// Открытый интервал (ещё не записанный в БД).
-struct OpenInterval {
+/// Открытый интервал (ещё не записанный в БД). Живёт в AppState, чтобы его можно
+/// было сбросить при выходе приложения (см. [`flush_open_interval`]).
+pub(crate) struct OpenInterval {
     key: IntervalKey,
     started_at: i64,
 }
@@ -66,7 +67,6 @@ fn run(state: Arc<AppState>, _app_handle: tauri::AppHandle) {
     log::info!("capture engine started");
 
     let hb_path = bridge::heartbeat_path(&state.data_dir);
-    let mut current: Option<OpenInterval> = None;
 
     loop {
         // Конфиг может поменяться через настройки — перечитываем каждый цикл.
@@ -79,9 +79,7 @@ fn run(state: Arc<AppState>, _app_handle: tauri::AppHandle) {
 
         if !cfg.tracking_enabled {
             // На паузе: закрываем текущий интервал (если был), спим.
-            if let Some(open) = current.take() {
-                flush(&state.db, &open, now_ms());
-            }
+            flush_open_interval(&state);
             std::thread::sleep(sleep);
             continue;
         }
@@ -123,23 +121,41 @@ fn run(state: Arc<AppState>, _app_handle: tauri::AppHandle) {
             },
         };
 
-        match &current {
-            Some(open) if open.key == key => {
-                // Тот же сигнал — интервал продолжается. Ничего не делаем.
+        // Сигнал сменился — закрываем старый интервал, открываем новый. Открытый
+        // интервал хранится в AppState (его сбросит flush_open_interval на выходе).
+        // Лок open_interval отпускаем ДО записи в БД (flush лочит state.db).
+        let to_flush = {
+            let mut cur = state
+                .open_interval
+                .lock()
+                .expect("open_interval mutex poisoned");
+            let same = matches!(&*cur, Some(open) if open.key == key);
+            if same {
+                None
+            } else {
+                let old = cur.take();
+                *cur = Some(OpenInterval { key, started_at: now });
+                old
             }
-            _ => {
-                // Сигнал сменился: закрываем старый, открываем новый.
-                if let Some(open) = current.take() {
-                    flush(&state.db, &open, now);
-                }
-                current = Some(OpenInterval {
-                    key,
-                    started_at: now,
-                });
-            }
+        };
+        if let Some(open) = to_flush {
+            flush(&state.db, &open, now);
         }
 
         std::thread::sleep(sleep);
+    }
+}
+
+/// Сбросить открытый интервал в БД. Вызывается из capture loop (на паузе) и при
+/// выходе приложения (`RunEvent::Exit`), чтобы не терять последний сегмент.
+/// Лок open_interval отпускаем до записи в БД, чтобы не держать два лока сразу.
+pub(crate) fn flush_open_interval(state: &AppState) {
+    let open = match state.open_interval.lock() {
+        Ok(mut cur) => cur.take(),
+        Err(_) => return,
+    };
+    if let Some(open) = open {
+        flush(&state.db, &open, now_ms());
     }
 }
 
@@ -154,17 +170,27 @@ fn resolve_browser(
     let name = Some(b.as_str().to_string());
 
     if let Some(hb) = bridge::read(hb_path) {
-        if hb.kind == "active" && now - hb.ts < HEARTBEAT_FRESH_MS {
-            if let Some(url) = hb.url.as_deref() {
-                let domain = browser::url_domain(url);
-                if domain.is_some() {
-                    return (domain, Some(url.to_string()), name);
+        // Доверяем heartbeat только если он свежий: age в [0, FRESH).
+        // age >= 0 защищает от обратного скачка системных часов (иначе
+        // отрицательный age проходил бы как «свежий» и привязал бы устаревший URL).
+        let age = now - hb.ts;
+        if (0..HEARTBEAT_FRESH_MS).contains(&age) {
+            if hb.kind == "active" {
+                if let Some(url) = hb.url.as_deref() {
+                    let domain = browser::url_domain(url);
+                    if domain.is_some() {
+                        return (domain, Some(url.to_string()), name);
+                    }
                 }
+            } else {
+                // Свежий blur/idle — активной вкладки нет: не приписываем
+                // устаревший URL/домен и не парсим заголовок.
+                return (None, None, name);
             }
         }
     }
 
-    // Fallback: иногда URL/домен виден прямо в заголовке вкладки.
+    // Нет свежего heartbeat — fallback на парсинг заголовка вкладки.
     let parsed = browser::parse_title(title);
     (parsed.domain, parsed.url, name)
 }

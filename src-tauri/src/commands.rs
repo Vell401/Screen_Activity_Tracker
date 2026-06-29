@@ -45,6 +45,31 @@ pub fn get_summary(
     .unwrap_or_default()
 }
 
+/// Суммарные показатели за диапазон (KPI дашборда) — агрегируются в SQL.
+#[tauri::command]
+pub fn get_range_stats(range: DateRange, state: State<'_, Arc<AppState>>) -> RangeStats {
+    db::with_conn(conn(&state), |c| db::query_range_stats(c, range.from, range.to)).unwrap_or(
+        RangeStats {
+            total_ms: 0,
+            idle_ms: 0,
+            intervals: 0,
+        },
+    )
+}
+
+/// Бакеты таймлайна (по часам/дням, с разбивкой по категориям) — агрегируются в SQL.
+#[tauri::command]
+pub fn get_timeline(
+    range: DateRange,
+    hourly: bool,
+    state: State<'_, Arc<AppState>>,
+) -> Vec<TimelineBucket> {
+    db::with_conn(conn(&state), |c| {
+        db::query_timeline(c, range.from, range.to, hourly)
+    })
+    .unwrap_or_default()
+}
+
 // ----- category rules ------------------------------------------------------
 
 #[tauri::command]
@@ -59,14 +84,14 @@ pub fn upsert_category_rule(
 ) -> CategoryRule {
     let saved = db::with_conn(conn(&state), |c| db::upsert_rule(c, &rule)).unwrap_or(rule);
     // Правила изменились — пересчитываем категории всех записей.
-    let _ = db::with_conn(conn(&state), |c| db::recategorize_all(c));
+    let _ = db::with_conn(conn(&state), |c| db::recategorize_all_and_mark(c));
     saved
 }
 
 #[tauri::command]
 pub fn delete_category_rule(id: i64, state: State<'_, Arc<AppState>>) {
     let _ = db::with_conn(conn(&state), |c| db::delete_rule(c, id));
-    let _ = db::with_conn(conn(&state), |c| db::recategorize_all(c));
+    let _ = db::with_conn(conn(&state), |c| db::recategorize_all_and_mark(c));
 }
 
 // ----- settings ------------------------------------------------------------
@@ -192,7 +217,7 @@ pub fn clear_activities(state: State<'_, Arc<AppState>>) {
 /// Принудительно пересчитать категории по текущим правилам.
 #[tauri::command]
 pub fn recategorize(state: State<'_, Arc<AppState>>) {
-    let _ = db::with_conn(conn(&state), |c| db::recategorize_all(c));
+    let _ = db::with_conn(conn(&state), |c| db::recategorize_all_and_mark(c));
 }
 
 // ----- система: трей, автозапуск, путь к БД --------------------------------
@@ -245,35 +270,30 @@ pub fn choose_db_location(app: AppHandle, state: State<'_, Arc<AppState>>) {
         };
         let target = folder.join("screen_activity.db");
 
-        // Копируем под локом БД, чтобы capture loop не писал во время копии.
-        let copy_ok = match st.db.lock() {
-            Ok(c) => {
-                let _ = c.pragma_update(None, "wal_checkpoint", "TRUNCATE");
-                if st.db_path == target {
-                    true
-                } else {
-                    if let Some(parent) = target.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    match std::fs::copy(&st.db_path, &target) {
-                        Ok(_) => true,
-                        Err(e) => {
-                            log::error!("копирование БД не удалось: {e}");
-                            false
-                        }
-                    }
-                }
+        // Держим лок БД на всё: чекпойнт → копия → запись пути → рестарт. Иначе
+        // capture-поток мог бы записать в СТАРУЮ БД уже после копирования, и эти
+        // интервалы потерялись бы после открытия новой.
+        let Ok(c) = st.db.lock() else { return };
+        let _ = c.pragma_update(None, "wal_checkpoint", "TRUNCATE");
+        if st.db_path != target {
+            if let Some(parent) = target.parent() {
+                let _ = std::fs::create_dir_all(parent);
             }
-            Err(_) => false,
-        };
-        if !copy_ok {
-            return;
+            if let Err(e) = std::fs::copy(&st.db_path, &target) {
+                log::error!("копирование БД не удалось: {e}");
+                return;
+            }
         }
-        let _ = std::fs::write(
+        if let Err(e) = std::fs::write(
             st.data_dir.join("db_location.txt"),
             target.to_string_lossy().as_bytes(),
-        );
-        // Перезапуск, чтобы открыть БД по новому пути.
+        ) {
+            log::error!("запись db_location.txt не удалась: {e}");
+            return;
+        }
+        // Лок ещё удерживается (c живёт до конца замыкания) — capture не запишет
+        // в старую БД до выхода процесса.
+        let _ = &c;
         app2.restart();
     });
 }
@@ -286,16 +306,17 @@ pub fn get_extension_status(state: State<'_, Arc<AppState>>) -> crate::extension
     crate::extension::status(&state)
 }
 
-/// Выгрузить файлы расширения в папку «Загрузки» и открыть её в проводнике.
+/// Выгрузить файлы расширения в папку рядом с БД и открыть её в проводнике.
 /// Возвращает путь к папке.
 #[tauri::command]
 pub fn export_extension(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    // Папка назначения: %USERPROFILE%\Downloads\SAT-Browser-Extension,
-    // с откатом на app_data_dir, если профиль недоступен.
-    let base = std::env::var_os("USERPROFILE")
-        .map(std::path::PathBuf::from)
-        .map(|p| p.join("Downloads"))
-        .filter(|p| p.exists())
+    // Папка назначения — рядом с файлом БД (стабильное место, а не «Загрузки»):
+    // пользователю не нужно никуда перекладывать, расширение грузится распакованным
+    // прямо отсюда. Откат на app_data_dir, если у БД почему-то нет родителя.
+    let base = state
+        .db_path
+        .parent()
+        .map(std::path::Path::to_path_buf)
         .unwrap_or_else(|| state.data_dir.clone());
     let dest = base.join("SAT-Browser-Extension");
 

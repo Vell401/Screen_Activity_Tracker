@@ -46,8 +46,12 @@ pub fn read(path: &Path) -> Option<BrowserHeartbeat> {
     serde_json::from_str(&txt).ok()
 }
 
-/// Записать heartbeat (вызывается нативным хостом). Файл крошечный, пишем целиком.
+/// Записать heartbeat. Пишем во временный файл и переименовываем — атомарно,
+/// чтобы читающий capture-поток никогда не увидел усечённый/частичный JSON.
 pub fn write(path: &Path, hb: &BrowserHeartbeat) -> std::io::Result<()> {
     let txt = serde_json::to_string(hb).unwrap_or_else(|_| "{}".to_string());
-    std::fs::write(path, txt)
+    let tmp = path.with_file_name(format!("{HEARTBEAT_FILE}.tmp"));
+    std::fs::write(&tmp, txt)?;
+    // std::fs::rename на Windows заменяет существующий файл атомарно (MoveFileEx).
+    std::fs::rename(&tmp, path)
 }

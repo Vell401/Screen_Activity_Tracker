@@ -25,7 +25,9 @@ const IDLE_OPTIONS = ["30000", "60000", "120000", "180000", "300000", "600000"];
 export function SettingsView() {
   const t = useT();
   const settings = useAsyncData(getSettings, []);
-  const db = useAsyncData(getDbInfo, [], 4000);
+  // Просто статистика (число записей, размер БД) — не нужна секундная свежесть;
+  // getDbInfo делает COUNT(*) по всей таблице, незачем гонять его каждые 4с.
+  const db = useAsyncData(getDbInfo, [], 30000);
   const trackingEnabled = useAppStore((s) => s.trackingEnabled);
   const setTracking = useAppStore((s) => s.setTrackingEnabled);
   const bumpRefresh = useAppStore((s) => s.bumpRefresh);

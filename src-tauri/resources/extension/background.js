@@ -3,8 +3,9 @@
  *
  * Транспорт: локальный HTTP-сервер приложения на 127.0.0.1. Шлём:
  *   - POST /heartbeat — URL/заголовок активной вкладки (для трекинга);
- *   - POST /favicon   — фавикон сайта (PNG), чтобы приложение показывало
- *     реальные иконки сайтов, само НЕ обращаясь в интернет.
+ *   - POST /favicon   — байты фавикона сайта как есть (PNG/ICO/JPEG/GIF/WebP/
+ *     SVG — какой формат сайт отдал, такой и шлём, без перекодирования), чтобы
+ *     приложение показывало реальные иконки сайтов, само НЕ обращаясь в интернет.
  * В сеть наружу расширение ходит только за фавиконом уже открытого сайта.
  */
 
@@ -61,22 +62,24 @@ function isIpish(host) {
   return !/[a-z]/i.test(host);
 }
 
+/** Максимальный размер тела — совпадает с гейтом на бэкенде (server.rs). */
+const MAX_FAVICON_BYTES = 512 * 1024;
+
 /**
- * Скачать картинку по URL и нормализовать в PNG 48×48 → base64 (или null).
- * createImageBitmap в service worker не умеет SVG — такой источник бросит
- * ошибку, поэтому в sendFavicon ниже есть запасной /favicon.ico.
+ * Скачать байты по URL как есть → base64 (или null). Раньше здесь была
+ * растеризация в PNG через OffscreenCanvas/createImageBitmap — но
+ * createImageBitmap в service worker принципиально не декодирует SVG (нет
+ * DOM), из-за чего сайты с одним только SVG-фавиконом молча оставались без
+ * иконки. Теперь просто пересылаем байты как есть — приложение само
+ * определяет формат по содержимому (icons::sniff_image_mime) и отдаёт
+ * правильный MIME для <img src>; браузер/webview рендерит любой формат сам.
  */
-async function rasterizeToPng(url) {
+async function fetchAsBase64(url) {
   const resp = await fetch(url);
   if (!resp.ok) return null;
-  const blob = await resp.blob();
-  const bitmap = await createImageBitmap(blob);
-  const size = 48;
-  const canvas = new OffscreenCanvas(size, size);
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(bitmap, 0, 0, size, size);
-  const pngBlob = await canvas.convertToBlob({ type: "image/png" });
-  const bytes = new Uint8Array(await pngBlob.arrayBuffer());
+  const buf = await resp.arrayBuffer();
+  if (buf.byteLength < 8 || buf.byteLength > MAX_FAVICON_BYTES) return null;
+  const bytes = new Uint8Array(buf);
   let bin = "";
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
@@ -85,9 +88,8 @@ async function rasterizeToPng(url) {
 /**
  * Достать фавикон сайта и отправить приложению (один раз на домен за сессию).
  * Пробуем несколько источников по очереди: заявленный вкладкой favicon, затем
- * /favicon.ico на самом домене — это покрывает сайты с SVG-фавиконом (его
- * воркер не растрит) и вкладки без favIconUrl. Приложение хранит результат
- * локально и в интернет само не ходит.
+ * /favicon.ico на самом домене — это покрывает вкладки без favIconUrl.
+ * Приложение хранит результат локально и в интернет само не ходит.
  */
 async function sendFavicon(domain, favUrl) {
   if (!domain || isIpish(domain)) return;
@@ -99,13 +101,13 @@ async function sendFavicon(domain, favUrl) {
   candidates.push(`http://${domain}/favicon.ico`);
   for (const url of candidates) {
     try {
-      const png = await rasterizeToPng(url);
-      if (png) {
-        const ok = await post("/favicon", { domain, png });
+      const data = await fetchAsBase64(url);
+      if (data) {
+        const ok = await post("/favicon", { domain, data });
         if (ok) return;
       }
     } catch (e) {
-      /* недоступно/не растрится — пробуем следующий источник */
+      /* недоступно — пробуем следующий источник */
     }
   }
   // Ни один источник не сработал — позволим повторить позже.

@@ -20,6 +20,13 @@ CREATE TABLE IF NOT EXISTS activities (
 CREATE INDEX IF NOT EXISTS idx_activities_started ON activities(started_at);
 CREATE INDEX IF NOT EXISTS idx_activities_app     ON activities(app_name);
 CREATE INDEX IF NOT EXISTS idx_activities_domain  ON activities(domain);
+-- Диапазонные запросы (get_activities/get_summary/get_range_stats/get_timeline)
+-- фильтруют "ended_at >= from AND started_at <= to". `to` на практике почти
+-- всегда "сейчас", так что started_at<=to совпадает почти со всеми строками —
+-- реально отсекающее условие это ended_at>=from, а его не на чем было искать
+-- (только idx_activities_started, и то не с той стороны). Без этого индекса
+-- каждый такой запрос на большой БД сканировал бы всю таблицу целиком.
+CREATE INDEX IF NOT EXISTS idx_activities_ended   ON activities(ended_at);
 
 -- Правило сопоставления приложение/домен -> категория.
 -- match_type:

@@ -4,9 +4,11 @@
 //!   - `GET  /status`   — проверка, что сервер жив (расширение ищет порт);
 //!   - `POST /heartbeat`— {type,url,title}: пишем `browser_heartbeat.json`
 //!     (см. [`crate::bridge`]); capture loop читает этот же файл;
-//!   - `POST /favicon`  — {domain, png(base64)}: сохраняем фавикон сайта в кеш
-//!     иконок (`app_icons[домен]` + PNG на диске). Приложение само в интернет
-//!     не ходит — байты приносит расширение.
+//!   - `POST /favicon`  — {domain, data(base64)}: сохраняем фавикон сайта в кеш
+//!     иконок (`app_icons[домен]` + файл на диске). `data` — байты как есть
+//!     (PNG/ICO/JPEG/GIF/WebP/SVG, что бы ни отдал сайт — расширение больше не
+//!     растрирует их в PNG, см. `icons::sniff_image_mime`). Приложение само в
+//!     интернет не ходит — байты приносит расширение.
 //!
 //! Сервер мини-ручной (только std::net): один клиент (расширение), простые
 //! запросы. CORS открыт.
@@ -50,9 +52,10 @@ struct Incoming {
 struct FaviconMsg {
     #[serde(default)]
     domain: String,
-    /// PNG в base64 (возможно с data-URL префиксом).
+    /// Байты картинки в base64 (возможно с data-URL префиксом). Формат — какой
+    /// прислал сайт (PNG/ICO/JPEG/GIF/WebP/SVG), не обязательно PNG.
     #[serde(default)]
-    png: String,
+    data: String,
 }
 
 /// Запустить сервер в фоновом потоке. Биндит первый свободный порт из [`PORTS`].
@@ -150,8 +153,8 @@ fn handle(mut stream: TcpStream, state: &AppState) {
         ("POST", p) if p.starts_with("/favicon") => {
             let body = read_body(&mut reader);
             if let Ok(msg) = serde_json::from_slice::<FaviconMsg>(&body) {
-                if let Some(png) = base64_decode(&msg.png) {
-                    store_favicon(state, &msg.domain, &png);
+                if let Some(bytes) = base64_decode(&msg.data) {
+                    store_favicon(state, &msg.domain, &bytes);
                 }
             }
             respond(&mut stream, 200, "application/json", "{\"ok\":true}");
@@ -161,13 +164,14 @@ fn handle(mut stream: TcpStream, state: &AppState) {
 }
 
 /// Сохранить фавикон сайта в кеш иконок (ключ — домен).
-fn store_favicon(state: &AppState, domain: &str, png: &[u8]) {
-    // Санити: непустой PNG разумного размера.
-    if png.len() < 8 || png.len() > 512 * 1024 {
+fn store_favicon(state: &AppState, domain: &str, bytes: &[u8]) {
+    // Санити: разумный размер и распознаваемый формат картинки (см.
+    // icons::sniff_image_mime) — расширение больше ничего не растрирует и не
+    // проверяет само, поэтому здесь единственный шлюз от мусора на входе.
+    if bytes.len() < 8 || bytes.len() > 512 * 1024 {
         return;
     }
-    // PNG-сигнатура (расширение нормализует фавикон в PNG через canvas).
-    if png[..8] != [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a] {
+    if crate::icons::sniff_image_mime(bytes).is_none() {
         return;
     }
     let host = domain.trim().to_ascii_lowercase();
@@ -179,8 +183,8 @@ fn store_favicon(state: &AppState, domain: &str, png: &[u8]) {
     // клиента) мог бы перезаписать иконку настоящего приложения.
     let key = format!("site:{host}");
 
-    let hash = crate::icons::sha256_hex(png);
-    if crate::icons::write_to_disk(&state.data_dir, &hash, png).is_err() {
+    let hash = crate::icons::sha256_hex(bytes);
+    if crate::icons::write_to_disk(&state.data_dir, &hash, bytes).is_err() {
         return;
     }
     let icon = crate::db::AppIcon {

@@ -361,10 +361,13 @@ pub fn get_app_icons(
         .unwrap_or_default()
 }
 
-/// Принудительно извлечь (или пере-извлечь) иконку для указанного имени.
-/// Запускается синхронно и возвращает запись AppIcon или None при неудаче.
-/// Используется вручную из UI (Settings/Диагностика), если автоматическое
-/// извлечение не сработало.
+/// Убедиться, что иконка для имени закеширована. Если уже есть в БД —
+/// возвращает её сразу, не трогая Win32 (используется для префетча из UI:
+/// DashboardView/ActivityView вызывают это для каждого видимого приложения на
+/// каждый поллинг — без этой проверки каждый такой вызов заново перечислял бы
+/// процессы и извлекал иконку из .exe, даже если она давно закеширована).
+/// Извлекает синхронно, только если записи ещё нет (например, автоматическое
+/// извлечение в capture loop почему-то не сработало).
 #[tauri::command]
 pub fn ensure_app_icon(
     app_name: String,
@@ -373,6 +376,13 @@ pub fn ensure_app_icon(
     let norm = crate::icons::normalize_app_name(&app_name);
     if norm.is_empty() || norm.starts_with("pid:") || norm == "(unknown)" {
         return None;
+    }
+
+    if let Some(existing) = db::with_conn(conn(&state), |c| db::get_app_icon(c, &norm))
+        .ok()
+        .flatten()
+    {
+        return Some(existing);
     }
 
     // Сначала пробуем найти путь через текущий снимок активного окна.
@@ -404,9 +414,11 @@ pub fn ensure_app_icon(
     Some(rec)
 }
 
-/// Прочитать PNG-файл иконки и вернуть data URL.
-/// Просто формат: `data:image/png;base,<base64>`. Удобно для <img src>.
-/// Если иконки нет — возвращает None (UI использует fallback-глиф/монограмму).
+/// Прочитать файл иконки и вернуть data URL: `data:image/<mime>;base64,<b64>`.
+/// MIME определяется по содержимому (`icons::sniff_image_mime`), а не по
+/// расширению файла на диске — иконки .exe всегда PNG, но фавикон сайта может
+/// быть ICO/JPEG/GIF/WebP/SVG (см. server.rs::store_favicon). Удобно для
+/// <img src>. Если иконки нет — возвращает None (UI использует fallback).
 #[tauri::command]
 pub fn get_app_icon_data(
     app_name: String,
@@ -418,11 +430,9 @@ pub fn get_app_icon_data(
         .flatten()?;
     let path = crate::icons::icon_path(&state.data_dir, &rec.icon_hash);
     let bytes = std::fs::read(&path).ok()?;
+    let mime = crate::icons::sniff_image_mime(&bytes).unwrap_or("image/png");
     // base64 encode без внешних крейтов.
-    Some(format!(
-        "data:image/png;base64,{}",
-        base64_encode(&bytes)
-    ))
+    Some(format!("data:{mime};base64,{}", base64_encode(&bytes)))
 }
 
 /// Простой base64-кодер (без внешних зависимостей).

@@ -190,7 +190,11 @@ pub fn query_activities(
     Ok(out)
 }
 
-/// Агрегированная сводка для дашборда.
+/// Агрегированная сводка для дашборда (Top Apps/Domains, донат категорий).
+/// Простой исключён (is_idle=0) — согласовано с KPI «Активное время» и
+/// таймлайном, которые тоже считают только активное время. Иначе оставленное
+/// открытым окно/вкладка во время ухода от ПК молча приплюсовывалось бы к его
+/// показателям без какой-либо пометки (в отличие от бейджа «idle» в журнале).
 pub fn query_summary(
     conn: &Connection,
     from: i64,
@@ -203,11 +207,22 @@ pub fn query_summary(
         SummaryGroupBy::Domain => "COALESCE(a.domain, a.app_name)",
         SummaryGroupBy::Category => "COALESCE(cr.name, 'Без категории')",
     };
+    // INDEXED BY принудительно: для group_by=App у SQLite есть соблазн
+    // сканировать через idx_activities_app целиком (это готовый порядок для
+    // GROUP BY по app_name без временного B-tree) вместо того чтобы сузиться
+    // по диапазону дат через idx_activities_ended — и этот выбор остаётся
+    // неизменным даже после ANALYZE. Замерено на синтетических 500k строк за
+    // год: без хинта — 600+ мс (скан всей таблицы) на любой диапазон, включая
+    // "всё время"; с хинтом — 17-100 мс. Для Domain/Category такой соблазн не
+    // возникает (их ключ — вычисляемое выражение, а не голая колонка с
+    // отдельным индексом), там планировщик и без хинта уже выбирает
+    // idx_activities_ended — так что хинт для них не меняет план (безопасно
+    // применять к одному общему шаблону запроса на все три группировки).
     let sql = format!(
         "SELECT {key} AS k, SUM(a.duration_ms) AS total, COUNT(*) AS cnt, a.category_id
-         FROM activities a
+         FROM activities a INDEXED BY idx_activities_ended
          LEFT JOIN category_rules cr ON cr.id = a.category_id
-         WHERE a.ended_at >= ?1 AND a.started_at <= ?2
+         WHERE a.ended_at >= ?1 AND a.started_at <= ?2 AND a.is_idle = 0
          GROUP BY k
          ORDER BY total DESC",
         key = key_expr
@@ -744,5 +759,46 @@ mod tests {
         // Bulk с пустым списком — пустой результат, без ошибок.
         let empty = get_app_icons_bulk(&conn, &[]).expect("empty bulk");
         assert!(empty.is_empty());
+    }
+
+    /// Регрессия на INDEXED BY в query_summary: если имя индекса когда-нибудь
+    /// разъедется со схемой (переименуют/удалят в schema.sql), запрос будет
+    /// падать в рантайме с "no such index" — обычный SQL так не ломается,
+    /// поэтому именно на этот запрос нужен явный тест поверх настоящей схемы
+    /// (open_mem применяет её целиком, включая idx_activities_ended).
+    #[test]
+    fn query_summary_works_with_indexed_by_hint() {
+        let conn = open_mem();
+        let mk = |app: &str, dom: Option<&str>, ms: i64, idle: bool| Activity {
+            id: 0,
+            started_at: 0,
+            ended_at: ms,
+            duration_ms: ms,
+            app_name: app.to_string(),
+            window_title: None,
+            browser: None,
+            url: None,
+            domain: dom.map(str::to_string),
+            category_id: None,
+            category_name: None,
+            is_idle: idle,
+        };
+        insert_activity(&conn, &mk("chrome.exe", Some("github.com"), 60_000, false)).unwrap();
+        insert_activity(&conn, &mk("chrome.exe", Some("github.com"), 5_000, true)).unwrap();
+        insert_activity(&conn, &mk("code.exe", None, 30_000, false)).unwrap();
+
+        let by_app = query_summary(&conn, 0, i64::MAX, &SummaryGroupBy::App).expect("app summary");
+        let chrome = by_app.iter().find(|b| b.key == "chrome.exe").expect("chrome bucket");
+        assert_eq!(chrome.total_ms, 60_000, "простой (idle) не должен попадать в сумму");
+        assert_eq!(chrome.count, 1);
+
+        let by_domain =
+            query_summary(&conn, 0, i64::MAX, &SummaryGroupBy::Domain).expect("domain summary");
+        assert!(by_domain.iter().any(|b| b.key == "github.com" && b.total_ms == 60_000));
+
+        let by_cat =
+            query_summary(&conn, 0, i64::MAX, &SummaryGroupBy::Category).expect("category summary");
+        let total: i64 = by_cat.iter().map(|b| b.total_ms).sum();
+        assert_eq!(total, 90_000, "chrome (active) + code = вся активная сумма без idle");
     }
 }

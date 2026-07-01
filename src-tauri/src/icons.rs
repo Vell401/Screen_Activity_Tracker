@@ -221,6 +221,42 @@ pub fn write_to_disk(data_dir: &Path, hash_hex: &str, png: &[u8]) -> std::io::Re
     Ok(path)
 }
 
+/// Определить MIME картинки по сигнатуре байт. `None` — не похоже ни на один
+/// известный формат (защита от мусора во входных данных фавикона).
+///
+/// Нужно, потому что фавикон с сайта не всегда PNG: браузер отдаёт то, что
+/// заявлено в `<link rel="icon">` — часто ICO, нередко SVG. Раньше расширение
+/// растрировало всё в PNG через `OffscreenCanvas`/`createImageBitmap` в service
+/// worker, но SVG там принципиально не декодируется (нет DOM) — такие сайты
+/// молча оставались без иконки. Теперь расширение просто пересылает байты как
+/// есть, а формат для `data:` URL определяется здесь при отдаче на фронт.
+pub fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() >= 8 && bytes[..8] == [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a] {
+        return Some("image/png");
+    }
+    if bytes.len() >= 4 && (bytes[..4] == [0, 0, 1, 0] || bytes[..4] == [0, 0, 2, 0]) {
+        return Some("image/x-icon"); // .ico (тип 2 — .cur, тоже пропускаем как иконку)
+    }
+    if bytes.len() >= 3 && bytes[..3] == [0xFF, 0xD8, 0xFF] {
+        return Some("image/jpeg");
+    }
+    if bytes.len() >= 6 && (bytes[..6] == *b"GIF87a" || bytes[..6] == *b"GIF89a") {
+        return Some("image/gif");
+    }
+    if bytes.len() >= 12 && bytes[..4] == *b"RIFF" && bytes[8..12] == *b"WEBP" {
+        return Some("image/webp");
+    }
+    // SVG — текстовый формат; ищем сигнатуру в начале (после BOM/пробелов).
+    let head = &bytes[..bytes.len().min(512)];
+    if let Ok(text) = std::str::from_utf8(head) {
+        let t = text.trim_start_matches('\u{feff}').trim_start();
+        if t.starts_with("<?xml") || t.starts_with("<svg") {
+            return Some("image/svg+xml");
+        }
+    }
+    None
+}
+
 /// Альфа-премильтипликация (in-place).
 fn premultiply_alpha_inplace(rgba: &mut [u8]) {
     for px in rgba.chunks_exact_mut(4) {
@@ -246,6 +282,31 @@ mod tests {
         let b = sha256_hex(b"abc");
         assert_eq!(a, b);
         assert_eq!(a.len(), 64);
+    }
+
+    #[test]
+    fn sniff_image_mime_recognizes_formats() {
+        assert_eq!(
+            sniff_image_mime(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]),
+            Some("image/png")
+        );
+        assert_eq!(sniff_image_mime(&[0, 0, 1, 0, 1, 2]), Some("image/x-icon"));
+        assert_eq!(sniff_image_mime(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("image/jpeg"));
+        assert_eq!(sniff_image_mime(b"GIF89a...."), Some("image/gif"));
+        let mut webp = b"RIFF".to_vec();
+        webp.extend_from_slice(&[0, 0, 0, 0]);
+        webp.extend_from_slice(b"WEBP");
+        assert_eq!(sniff_image_mime(&webp), Some("image/webp"));
+        assert_eq!(
+            sniff_image_mime(b"<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"),
+            Some("image/svg+xml")
+        );
+        assert_eq!(
+            sniff_image_mime(b"<?xml version=\"1.0\"?><svg></svg>"),
+            Some("image/svg+xml")
+        );
+        assert_eq!(sniff_image_mime(b"not an image, just text"), None);
+        assert_eq!(sniff_image_mime(&[]), None);
     }
 
     /// Реальный тест: пытаемся извлечь иконку из системного notepad.exe.

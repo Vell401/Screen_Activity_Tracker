@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "@/components/Sidebar";
 import { Segmented, Toggle } from "@/components/ui";
 import { IconRefresh } from "@/components/icons";
@@ -55,6 +56,16 @@ export default function App() {
       .catch(() => {});
   }, [setTracking, setLang, setTheme]);
 
+  // Окно вернуло фокус — развернули из трея, из панели задач или просто
+  // переключились обратно (см. lib.rs: show_main + WindowEvent::Focused).
+  // Данные могли устареть, пока опрос был на паузе; обновляем сразу.
+  useEffect(() => {
+    const unlisten = listen("app-resumed", () => bumpRefresh());
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [bumpRefresh]);
+
   // Статус расширения — для индикатора в сайдбаре.
   const ext = useAsyncData(getExtensionStatus, [], 5000);
   const extensionConnected = ext.data?.connected ?? false;
@@ -80,6 +91,7 @@ export default function App() {
     { value: "today", label: t("range.today") },
     { value: "week", label: t("range.week") },
     { value: "month", label: t("range.month") },
+    { value: "all", label: t("period.all") },
   ];
 
   const showRange = view === "dashboard" || view === "activity";

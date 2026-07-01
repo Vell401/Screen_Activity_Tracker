@@ -18,17 +18,20 @@ use std::sync::{Arc, Mutex};
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 
 use crate::state::AppState;
 
-/// Показать и сфокусировать главное окно (из трея).
+/// Показать и сфокусировать главное окно (из трея). Явно шлём "app-resumed" —
+/// не полагаемся только на нативный Focused(true) (см. on_window_event ниже),
+/// так как set_focus() на уже сфокусированном окне может не породить событие.
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+    let _ = app.emit("app-resumed", ());
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -132,15 +135,22 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| match event {
             // Закрытие окна → прячем в трей (если включено), не выходим.
-            if let WindowEvent::CloseRequested { api, .. } = event {
+            WindowEvent::CloseRequested { api, .. } => {
                 let state = window.state::<Arc<AppState>>();
                 if state.minimize_to_tray.load(Ordering::Relaxed) {
                     api.prevent_close();
                     let _ = window.hide();
                 }
             }
+            // Окно вернуло фокус — свернули из трея, развернули из панели задач
+            // или просто переключились обратно. Данные могли устареть, пока
+            // поллинг стоял на паузе (см. useAsyncData: пауза при document.hidden).
+            WindowEvent::Focused(true) => {
+                let _ = window.emit("app-resumed", ());
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_activities,

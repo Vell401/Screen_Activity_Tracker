@@ -2,16 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/Card";
 import { Drawer } from "@/components/Drawer";
 import { AppIcon } from "@/components/AppIcon";
-import { Segmented } from "@/components/ui";
 import { Stat } from "@/components/charts/Stat";
 import { BarList, type BarItem } from "@/components/charts/BarList";
 import { Donut } from "@/components/charts/Donut";
 import { LineChart, type LineSeries } from "@/components/charts/LineChart";
 import { useAppStore } from "@/stores/app";
 import { useAsyncData } from "@/lib/hooks";
+import { useAppIcons } from "@/lib/useAppIcons";
 import { useT } from "@/lib/i18n";
 import {
-  ensureAppIcon,
   getActivities,
   getRangeStats,
   getSummary,
@@ -28,26 +27,12 @@ import {
   formatTime,
   fromDateInput,
   isSameLocalDay,
-  rangeFor,
   resolveRange,
   startOfDay,
-  type RangePreset,
 } from "@/lib/format";
 import type { Activity, TimelineBucket } from "@/types/activity";
 
-const POLL = 30000;
-
-// Период для карточки «Топ приложений» — независимый от глобального диапазона.
-type AppsPeriod = RangePreset | "all";
-const APPS_PERIODS: { value: AppsPeriod; key: string }[] = [
-  { value: "today", key: "period.day" },
-  { value: "week", key: "period.week" },
-  { value: "month", key: "period.month" },
-  { value: "all", key: "period.all" },
-];
-function rangeForApps(p: AppsPeriod): { from: number; to: number } {
-  return p === "all" ? { from: 0, to: Date.now() } : rangeFor(p);
-}
+const POLL = 300000; // 5 минут — фонового обновления «главного экрана», пока окно открыто
 
 export function DashboardView() {
   const t = useT();
@@ -69,32 +54,21 @@ export function DashboardView() {
   const acts = useAsyncData(() => getActivities({ from: r.from, to: r.to }), deps, POLL);
   const rules = useAsyncData(listCategoryRules, deps, POLL);
 
-  // Топ приложений — со своим фильтром периода (день/неделя/месяц/всё время).
-  const [appsPeriod, setAppsPeriod] = useState<AppsPeriod>(
-    range === "custom" ? "today" : range,
-  );
-  const topApps = useAsyncData(
-    () => getSummary(rangeForApps(appsPeriod), "app"),
-    [appsPeriod, refreshKey],
-    POLL,
-  );
-
-  // Префетч реальных иконок для приложений из топа/недавних.
+  // Префетч реальных иконок для приложений из топа/недавних — через кеш
+  // useAppIcons (дедуп + троттлинг), а не «принудительно извлечь» напрямую:
+  // без этого каждый поллинг заново гонял бы Win32-извлечение иконки для
+  // каждого видимого приложения, даже для давно закешированных.
+  const { ensure: ensureIcon } = useAppIcons([]);
   useEffect(() => {
     const names = new Set<string>();
     for (const b of apps.data ?? []) {
       if (b.key && b.key !== "(unknown)") names.add(b.key);
     }
-    for (const b of topApps.data ?? []) {
-      if (b.key && b.key !== "(unknown)") names.add(b.key);
-    }
     for (const a of (acts.data ?? []).slice(0, 30)) {
       if (a.appName) names.add(a.appName);
     }
-    for (const n of names) {
-      ensureAppIcon(n).catch(() => {});
-    }
-  }, [apps.data, topApps.data, acts.data]);
+    for (const n of names) ensureIcon(n);
+  }, [apps.data, acts.data, ensureIcon]);
 
   // ----- производные метрики из интервалов -----
   const list = acts.data ?? [];
@@ -118,12 +92,16 @@ export function DashboardView() {
     return map;
   }, [rules.data]);
 
-  // ----- категории для детализации таймлайна (чекбоксы) -----
+  // ----- категории для детализации таймлайна (чекбоксы + активное время каждой) -----
   const timelineCats = useMemo(
     () =>
       (cats.data ?? [])
         .filter((b) => b.totalMs > 0 && b.key !== "Без категории" && b.key !== "Uncategorized")
-        .map((b) => ({ name: b.key, color: catColor.get(b.key) ?? colorForKey(b.key) })),
+        .map((b) => ({
+          name: b.key,
+          color: catColor.get(b.key) ?? colorForKey(b.key),
+          totalMs: b.totalMs,
+        })),
     [cats.data, catColor],
   );
   const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
@@ -135,8 +113,8 @@ export function DashboardView() {
       return next;
     });
 
-  // ----- топ приложений (по выбранному периоду карточки) -----
-  const topAppBars: BarItem[] = (topApps.data ?? [])
+  // ----- топ приложений (общий глобальный диапазон — единый с остальным дашбордом) -----
+  const topAppBars: BarItem[] = (apps.data ?? [])
     .filter((b) => b.key !== "(unknown)")
     .slice(0, 8)
     .map((b, i) => ({
@@ -183,15 +161,13 @@ export function DashboardView() {
   );
 
   const recent = list.slice(0, 10);
-  const appsLoading = topApps.loading && !topApps.data;
+  const appsLoading = apps.loading && !apps.data;
 
   // Drill-down: выбранный элемент для панели подробностей.
   const [detail, setDetail] = useState<{
     kind: "app" | "domain" | "category";
     value: string;
   } | null>(null);
-
-  const appsPeriodOptions = APPS_PERIODS.map((o) => ({ value: o.value, label: t(o.key) }));
 
   return (
     <>
@@ -230,13 +206,10 @@ export function DashboardView() {
                     key={c.name}
                     className={"tl-cat" + (on ? " tl-cat--on" : "")}
                     onClick={() => toggleCat(c.name)}
-                    style={on ? { borderColor: c.color } : undefined}
                   >
-                    <span
-                      className="tl-cat__dot"
-                      style={{ background: c.color, opacity: on ? 1 : 0.5 }}
-                    />
-                    {c.name}
+                    <span className="tl-cat__dot" style={{ background: c.color }} />
+                    <span className="tl-cat__name">{c.name}</span>
+                    <span className="tl-cat__time">{formatDuration(c.totalMs)}</span>
                   </button>
                 );
               })}
@@ -256,17 +229,7 @@ export function DashboardView() {
 
         {/* Топы */}
         <div className="dash__row dash__row--split">
-          <Card
-            title={t("dash.topApps")}
-            actions={
-              <Segmented
-                compact
-                value={appsPeriod}
-                options={appsPeriodOptions}
-                onChange={setAppsPeriod}
-              />
-            }
-          >
+          <Card title={t("dash.topApps")}>
             {appsLoading ? (
               <div className="loading-pad">
                 <div className="spinner" />

@@ -60,10 +60,7 @@ const en: Dict = {
   "dash.seriesTotal": "Activity",
   // top apps
   "dash.topApps": "Top apps",
-  "period.day": "Day",
-  "period.week": "Week",
-  "period.month": "Month",
-  "period.all": "All",
+  "period.all": "All time",
   "dash.noDataPeriod": "No data for the period",
   // top domains
   "dash.topDomains": "Top domains",
@@ -257,10 +254,7 @@ const ru: Dict = {
   "dash.detail": "Детализация:",
   "dash.seriesTotal": "Активность",
   "dash.topApps": "Топ приложений",
-  "period.day": "День",
-  "period.week": "Неделя",
-  "period.month": "Месяц",
-  "period.all": "Всё",
+  "period.all": "Всё время",
   "dash.noDataPeriod": "Нет данных за период",
   "dash.topDomains": "Топ доменов",
   "dash.topDomainsSub": "требует расширения или URL в заголовке",

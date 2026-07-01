@@ -97,11 +97,12 @@ export function rangeFor(preset: RangePreset): { from: number; to: number } {
 
 // Подписи диапазона перенесены в i18n: range.today / range.week / range.month.
 
-/** Выбор диапазона: пресет или пользовательский интервал (день/промежуток). */
-export type RangeSel = RangePreset | "custom";
+/** Выбор диапазона: пресет, всё время или пользовательский интервал (день/промежуток). */
+export type RangeSel = RangePreset | "all" | "custom";
 
 /**
- * Границы активного диапазона. Для пресета — {@link rangeFor}; для "custom" —
+ * Границы активного диапазона. Для пресета — {@link rangeFor}; для "all" — от
+ * начала эпохи до сейчас (реальные записи всегда позже); для "custom" —
  * заданные пользователем from/to (см. стор: customFrom/customTo).
  */
 export function resolveRange(
@@ -109,7 +110,9 @@ export function resolveRange(
   customFrom: number,
   customTo: number,
 ): { from: number; to: number } {
-  return sel === "custom" ? { from: customFrom, to: customTo } : rangeFor(sel);
+  if (sel === "custom") return { from: customFrom, to: customTo };
+  if (sel === "all") return { from: 0, to: Date.now() };
+  return rangeFor(sel);
 }
 
 /** Локальная полночь начала суток. */

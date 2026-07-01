@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/Card";
 import { useAppStore } from "@/stores/app";
 import { useAsyncData } from "@/lib/hooks";
+import { useAppIcons } from "@/lib/useAppIcons";
 import { useT } from "@/lib/i18n";
-import { ensureAppIcon, getActivities, listCategoryRules } from "@/lib/tauri";
+import { getActivities, listCategoryRules } from "@/lib/tauri";
 import {
   appLabel,
   colorForKey,
@@ -58,16 +59,16 @@ export function ActivityView() {
     });
   }, [acts.data, query, category, hideIdle]);
 
-  // Префетч иконок для приложений из журнала.
+  // Префетч иконок для приложений из журнала — через кеш useAppIcons (дедуп +
+  // троттлинг), а не «принудительно извлечь» напрямую: см. DashboardView.
+  const { ensure: ensureIcon } = useAppIcons([]);
   useEffect(() => {
     const names = new Set<string>();
     for (const a of filtered.slice(0, 100)) {
       if (a.appName) names.add(a.appName);
     }
-    for (const n of names) {
-      ensureAppIcon(n).catch(() => {});
-    }
-  }, [filtered]);
+    for (const n of names) ensureIcon(n);
+  }, [filtered, ensureIcon]);
 
   const totalMs = filtered.reduce((s, a) => s + a.durationMs, 0);
 

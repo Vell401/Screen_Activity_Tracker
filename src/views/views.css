@@ -41,14 +41,28 @@
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
-  transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+  transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 .tl-cat:hover {
   color: var(--text-normal);
 }
+/* Выбрана — белая (тема-контрастная) обводка вместо цветной рамки категории. */
 .tl-cat--on {
   color: var(--text-bright);
   background: var(--bg-active);
+  border-color: var(--text-bright);
+  box-shadow: 0 0 0 1px var(--text-bright);
+}
+.tl-cat__name {
+  white-space: nowrap;
+}
+/* Активное время категории — метрика, поэтому всегда максимальный контраст. */
+.tl-cat__time {
+  color: var(--text-bright);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .tl-cat__dot {
   width: 9px;

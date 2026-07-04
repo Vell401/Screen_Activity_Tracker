@@ -51,7 +51,7 @@ pub fn detect(app_name: &str) -> Option<Browser> {
         Some(Browser::Yandex)
     } else if matches!(
         lower.as_str(),
-        "msedge.exe" | "firefox.exe" | "opera.exe" | "brave.exe"
+        "msedge.exe" | "firefox.exe" | "opera.exe" | "brave.exe" | "vivaldi.exe"
     ) {
         Some(Browser::Other)
     } else {
@@ -111,5 +111,39 @@ pub fn url_domain(url: &str) -> Option<String> {
         None
     } else {
         Some(host.to_ascii_lowercase())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Регрессия: каждый браузер, заявленный поддерживаемым в CLAUDE.md /
+    /// UI расширения (Chrome, Edge, Brave, Opera, Yandex, Vivaldi), должен
+    /// распознаваться detect() — иначе capture loop даже не заглянет в
+    /// heartbeat-файл расширения для него (см. resolve_browser в capture/mod.rs).
+    #[test]
+    fn detect_recognizes_all_supported_browsers() {
+        for exe in [
+            "chrome.exe",
+            "browser.exe", // Yandex
+            "msedge.exe",
+            "opera.exe",
+            "brave.exe",
+            "vivaldi.exe",
+        ] {
+            assert!(detect(exe).is_some(), "{exe} должен распознаваться как браузер");
+        }
+    }
+
+    #[test]
+    fn detect_case_insensitive() {
+        assert!(detect("Vivaldi.EXE").is_some());
+        assert!(detect("CHROME.EXE").is_some());
+    }
+
+    #[test]
+    fn detect_none_for_non_browser() {
+        assert_eq!(detect("notepad.exe"), None);
     }
 }

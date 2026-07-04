@@ -41,7 +41,10 @@ pub fn load_config(lock: &Mutex<Connection>) -> CaptureConfig {
         }
         if let Some(v) = db::get_setting(c, KEY_IDLE_THRESHOLD_MS)? {
             if let Ok(n) = v.parse::<u64>() {
-                cfg.idle_threshold_ms = n;
+                // Защита от 0: is_idle() сравнивает как `d >= threshold_ms`, и при
+                // threshold_ms=0 это условие истинно всегда — вся активность
+                // молча считалась бы простоем.
+                cfg.idle_threshold_ms = n.max(1000);
             }
         }
         if let Some(v) = db::get_setting(c, KEY_TRACKING_ENABLED)? {

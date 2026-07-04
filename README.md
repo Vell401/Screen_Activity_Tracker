@@ -24,11 +24,11 @@
 ## Превью
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" width="49%" alt="Дашборд">
+  <img src="docs/screenshots/dashboard.png" width="100%" alt="Дашборд">
 </p>
 
 <p align="center">
- <img src="docs/screenshots/activity.png" width="49%" alt="Журнал активности">
+ <img src="docs/screenshots/activity.png" width="100%" alt="Журнал активности">
 </p>
 <!--
   Как добавить свои скриншоты:

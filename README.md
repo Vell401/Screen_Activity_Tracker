@@ -21,13 +21,15 @@
 
 </div>
 
-## Скриншоты
+## Превью
 
 <p align="center">
   <img src="docs/screenshots/dashboard.png" width="49%" alt="Дашборд">
-  <img src="docs/screenshots/activity.png" width="49%" alt="Журнал активности">
 </p>
 
+<p align="center">
+ <img src="docs/screenshots/activity.png" width="49%" alt="Журнал активности">
+</p>
 <!--
   Как добавить свои скриншоты:
   1. Сделайте PNG/JPG-скриншоты приложения.
@@ -99,7 +101,6 @@ npm run tauri build
   - `src/lib.rs` — setup приложения
   - `resources/extension/` — исходники браузерного расширения (встраиваются)
 
-Подробности — в [CLAUDE.md](./CLAUDE.md).
 
 ## Лицензия
 MIT

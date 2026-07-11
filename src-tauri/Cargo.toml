@@ -1,6 +1,6 @@
 [package]
 name = "screen-activity-tracker"
-version = "3.1.0"
+version = "3.2.0"
 description = "Локальный трекер активности за ПК"
 authors = ["Vell401"]
 edition = "2021"

@@ -127,18 +127,21 @@ pub fn set_tracking_enabled(enabled: bool, state: State<'_, Arc<AppState>>) {
 #[tauri::command]
 pub fn get_current_activity(state: State<'_, Arc<AppState>>) -> CurrentActivity {
     let cfg = state.config.lock().expect("config mutex poisoned").clone();
-    let idle = crate::capture::idle::is_idle(cfg.idle_threshold_ms);
+    let mut idle = crate::capture::idle::is_idle(cfg.idle_threshold_ms);
     let now = crate::bridge::now_ms();
 
     match crate::capture::window::current_foreground() {
         Some(snap) => {
-            let (domain, url, browser) = match crate::capture::browser::detect(&snap.app_name) {
+            let (domain, url, browser, media_playing) = match crate::capture::browser::detect(&snap.app_name) {
                 Some(b) => {
                     let mut domain = None;
                     let mut url = None;
+                    let mut media_playing = false;
                     let hb_path = crate::bridge::heartbeat_path(&state.data_dir);
                     if let Some(hb) = crate::bridge::read(&hb_path) {
-                        if hb.kind == "active" && now - hb.ts < 10_000 {
+                        let age = now - hb.ts;
+                        if hb.kind == "active" && (0..10_000).contains(&age) {
+                            media_playing = hb.media_playing;
                             if let Some(u) = hb.url {
                                 domain = crate::capture::browser::url_domain(&u);
                                 url = Some(u);
@@ -150,10 +153,13 @@ pub fn get_current_activity(state: State<'_, Arc<AppState>>) -> CurrentActivity 
                         domain = parsed.domain;
                         url = url.or(parsed.url);
                     }
-                    (domain, url, Some(b.as_str().to_string()))
+                    (domain, url, Some(b.as_str().to_string()), media_playing)
                 }
-                None => (None, None, None),
+                None => (None, None, None, false),
             };
+            if media_playing {
+                idle = false;
+            }
 
             let category_name = db::with_conn(conn(&state), |c| {
                 match db::find_category_id(c, &snap.app_name, domain.as_deref())? {

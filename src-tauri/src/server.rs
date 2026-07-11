@@ -2,7 +2,7 @@
 //!
 //! Транспорт «расширение → приложение» без native messaging. Эндпоинты:
 //!   - `GET  /status`   — проверка, что сервер жив (расширение ищет порт);
-//!   - `POST /heartbeat`— {type,url,title}: пишем `browser_heartbeat.json`
+//!   - `POST /heartbeat`— {type,url,title,mediaPlaying}: пишем `browser_heartbeat.json`
 //!     (см. [`crate::bridge`]); capture loop читает этот же файл;
 //!   - `POST /favicon`  — {domain, data(base64)}: сохраняем фавикон сайта в кеш
 //!     иконок (`app_icons[домен]` + файл на диске). `data` — байты как есть
@@ -45,6 +45,8 @@ struct Incoming {
     url: Option<String>,
     #[serde(default)]
     title: Option<String>,
+    #[serde(rename = "mediaPlaying", default)]
+    media_playing: bool,
 }
 
 /// Фавикон сайта от расширения.
@@ -144,6 +146,7 @@ fn handle(mut stream: TcpStream, state: &AppState) {
                     kind: msg.kind,
                     url: msg.url,
                     title: msg.title,
+                    media_playing: msg.media_playing,
                     ts: bridge::now_ms(),
                 };
                 let _ = bridge::write(&bridge::heartbeat_path(&state.data_dir), &hb);

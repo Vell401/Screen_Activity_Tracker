@@ -11,7 +11,7 @@
  * и кешируются в SQLite + на диск; здесь — только чтение data URL по ключу.
  */
 import { useCallback, useEffect, useReducer } from "react";
-import { getAppIconData } from "@/lib/tauri";
+import { ensureAppIcon, getAppIconData } from "@/lib/tauri";
 
 /** Ключ -> data URL (готов) | null (пробовали, иконки нет). */
 const cache = new Map<string, string | null>();
@@ -32,13 +32,24 @@ function notifyKey(key: string) {
   if (set) for (const l of set) l();
 }
 
+async function loadIcon(key: string): Promise<string | null> {
+  const cached = await getAppIconData(key);
+  if (cached || key.startsWith("site:")) return cached;
+
+  // Для приложения кеш мог не успеть создаться в capture loop (или процесс
+  // появился в истории до добавления извлечения иконок). Повторно просим
+  // backend извлечь HICON только для процессов, но никогда для favicon.
+  const extracted = await ensureAppIcon(key);
+  return extracted ? getAppIconData(key) : null;
+}
+
 function fetchIcon(key: string, force: boolean) {
   if (!key || inflight.has(key)) return;
   if (!force && cache.has(key)) return; // уже знаем результат
   if (force && Date.now() - (lastTry.get(key) ?? 0) < FORCE_THROTTLE_MS) return;
   inflight.add(key);
   lastTry.set(key, Date.now());
-  getAppIconData(key)
+  loadIcon(key)
     .then((url) => cache.set(key, url ?? null))
     .catch(() => cache.set(key, null))
     .finally(() => {

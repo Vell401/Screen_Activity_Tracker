@@ -93,9 +93,9 @@ fn run(state: Arc<AppState>, _app_handle: tauri::AppHandle) {
                 // Сохраняем путь для возможного извлечения иконки.
                 let exe_path = snap.exe_path.clone();
 
-                let (domain, url, browser_str) = match browser::detect(&snap.app_name) {
+                let (domain, url, browser_str, media_playing) = match browser::detect(&snap.app_name) {
                     Some(b) => resolve_browser(&hb_path, now, &snap.window_title, b),
-                    None => (None, None, None),
+                    None => (None, None, None, false),
                 };
 
                 // Если в фокусе — это новое приложение (или мы его ещё не
@@ -108,7 +108,10 @@ fn run(state: Arc<AppState>, _app_handle: tauri::AppHandle) {
                     domain,
                     url,
                     browser: browser_str,
-                    is_idle: idle,
+                    // Воспроизводимое видео — явный пользовательский сигнал
+                    // от расширения; считаем его активным, даже если мышь и
+                    // клавиатура не двигались дольше idle-порога.
+                    is_idle: idle && !media_playing,
                 }
             }
             None => IntervalKey {
@@ -166,7 +169,7 @@ fn resolve_browser(
     now: i64,
     title: &str,
     b: browser::Browser,
-) -> (Option<String>, Option<String>, Option<String>) {
+) -> (Option<String>, Option<String>, Option<String>, bool) {
     let name = Some(b.as_str().to_string());
 
     if let Some(hb) = bridge::read(hb_path) {
@@ -179,20 +182,20 @@ fn resolve_browser(
                 if let Some(url) = hb.url.as_deref() {
                     let domain = browser::url_domain(url);
                     if domain.is_some() {
-                        return (domain, Some(url.to_string()), name);
+                        return (domain, Some(url.to_string()), name, hb.media_playing);
                     }
                 }
             } else {
                 // Свежий blur/idle — активной вкладки нет: не приписываем
                 // устаревший URL/домен и не парсим заголовок.
-                return (None, None, name);
+                return (None, None, name, false);
             }
         }
     }
 
     // Нет свежего heartbeat — fallback на парсинг заголовка вкладки.
     let parsed = browser::parse_title(title);
-    (parsed.domain, parsed.url, name)
+    (parsed.domain, parsed.url, name, false)
 }
 
 /// Закрыть и записать интервал в БД (с категорией).

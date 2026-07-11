@@ -15,6 +15,10 @@ let basePort = null;
 
 // Домены, чьи фавиконы уже отправлены в этой сессии SW (чтобы не слать повторно).
 const sentFavicons = new Set();
+// Состояние media по вкладкам. URL/заголовки здесь не храним дополнительно:
+// они уже передаются существующим heartbeat активной вкладки.
+const mediaByTab = new Map();
+const MEDIA_FRESH_MS = 10_000;
 
 async function findServer() {
   if (basePort) return basePort;
@@ -36,12 +40,12 @@ async function post(path, payload) {
   const p = await findServer();
   if (!p) return false;
   try {
-    await fetch(`http://127.0.0.1:${p}${path}`, {
+    const response = await fetch(`http://127.0.0.1:${p}${path}`, {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
       body: JSON.stringify(payload),
     });
-    return true;
+    return response.ok;
   } catch (e) {
     basePort = null; // сервер мог перезапуститься на другом порту.
     return false;
@@ -124,10 +128,13 @@ async function report(reason) {
       post("/heartbeat", { type: "idle", ts: Date.now() });
       return;
     }
+    const media = mediaByTab.get(tab.id);
+    const mediaPlaying = Boolean(media?.playing && Date.now() - media.updatedAt < MEDIA_FRESH_MS);
     post("/heartbeat", {
       type: "active",
       url: tab.url,
       title: tab.title || "",
+      mediaPlaying,
       ts: Date.now(),
       reason,
     });
@@ -142,11 +149,14 @@ async function report(reason) {
 
 chrome.tabs.onActivated.addListener(() => report("activated"));
 
-chrome.tabs.onUpdated.addListener((_id, info, tab) => {
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.url || info.status === "loading") mediaByTab.delete(tabId);
   if (tab.active && (info.url || info.status === "complete" || info.favIconUrl)) {
     report("updated");
   }
 });
+
+chrome.tabs.onRemoved.addListener((tabId) => mediaByTab.delete(tabId));
 
 chrome.windows.onFocusChanged.addListener((winId) => {
   if (winId === chrome.windows.WINDOW_ID_NONE) {
@@ -164,6 +174,11 @@ chrome.alarms.onAlarm.addListener((a) => {
 
 // Ручной реконнект из popup.
 chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+  if (msg && msg.type === "media-state" && _s.tab?.id !== undefined) {
+    mediaByTab.set(_s.tab.id, { playing: msg.playing === true, updatedAt: Date.now() });
+    report("media");
+    return false;
+  }
   if (msg && msg.cmd === "reconnect") {
     basePort = null;
     report("manual");

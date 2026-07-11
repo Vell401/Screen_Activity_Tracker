@@ -1,12 +1,19 @@
 {
   "manifest_version": 3,
   "name": "Screen Activity Tracker — Browser Connector",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Передаёт URL и заголовок активной вкладки в приложение Screen Activity Tracker по локальному адресу 127.0.0.1. Ничего не отправляет в интернет.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAomPOFGdRncq9OBhV4+g11zzv8kjhw+e5HToXlRZ6E33tdTGNkz5W85IR4sWpXEnYuxAOosdW5U+PkwZOD9QYwI7EUfojCPSZMo2Ez+3NOWaKZ5XmHNFtQN9SoTbhp7gz1cN7E1+lvOeK5kThfdRgz8k7YFHqB32I63H+QKj9I3U8bAxrOWabB2XKUVHvL3tSLYYMBsno20vEp0T83p8rn4S2o/zkr9gXVuWUPLhZGkq2bI1656grNFyrN90LbFKceYQhl/ddYTpZ3/e4y96y4PXNYtTl8xGZshOZmvjUaD4Ac5qib+UiNgBElOnT7Rp0VNjv4aqg0DJt254THWUVUwIDAQAB",
   "permissions": ["tabs", "alarms"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["media.js"],
+      "run_at": "document_start"
+    }
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Screen Activity Tracker"

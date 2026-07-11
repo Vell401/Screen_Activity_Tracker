@@ -22,6 +22,11 @@ pub struct BrowserHeartbeat {
     pub url: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
+    /// В активной вкладке действительно воспроизводится HTML media.
+    /// Этот сигнал приходит только от расширения, а capture loop доверяет ему
+    /// лишь пока heartbeat свежий и окно браузера находится в фокусе.
+    #[serde(default)]
+    pub media_playing: bool,
     /// unix ms — момент записи heartbeat хостом.
     #[serde(default)]
     pub ts: i64,

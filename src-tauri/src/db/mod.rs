@@ -63,6 +63,7 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     apply_migrations(&conn)?;
+    migrate_legacy_favicon_keys(&conn)?;
     seed_defaults(&conn)?;
     // Пересчёт категорий только при изменении правил (гейт по сигнатуре) —
     // иначе на больших БД каждый старт делал бы дорогой UPDATE всех строк.
@@ -72,6 +73,53 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
 
 fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(SCHEMA_SQL)?;
+    Ok(())
+}
+
+/// Перенести favicon, сохранённые ранними версиями под «голым» доменом,
+/// в пространство ключей `site:<домен>`.
+///
+/// Префикс отделяет доменные иконки от иконок процессов. Без этой миграции UI
+/// уже запрашивает `site:youtube.com`, а прежняя запись `youtube.com` остаётся
+/// недоступной, хотя файл иконки на диске существует. Новая запись имеет
+/// приоритет: если она уже есть, legacy-копию просто удаляем.
+fn migrate_legacy_favicon_keys(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT app_name, icon_hash, source, width, updated_at
+         FROM app_icons
+         WHERE source = 'favicon' AND app_name NOT LIKE 'site:%'",
+    )?;
+    let legacy = stmt
+        .query_map([], |r| {
+            Ok(AppIcon {
+                app_name: r.get(0)?,
+                icon_hash: r.get(1)?,
+                source: r.get(2)?,
+                width: r.get(3)?,
+                updated_at: r.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+
+    for icon in legacy {
+        let legacy_key = icon.app_name;
+        conn.execute(
+            "INSERT OR IGNORE INTO app_icons (app_name, icon_hash, source, width, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                format!("site:{legacy_key}"),
+                icon.icon_hash,
+                icon.source,
+                icon.width,
+                icon.updated_at,
+            ],
+        )?;
+        conn.execute(
+            "DELETE FROM app_icons WHERE app_name = ?1 AND source = 'favicon'",
+            rusqlite::params![legacy_key],
+        )?;
+    }
     Ok(())
 }
 
@@ -715,6 +763,30 @@ mod tests {
         let got = get_app_icon(&conn, "chrome.exe").expect("query2").expect("row2");
         assert_eq!(got.icon_hash, "def456");
         assert_eq!(got.updated_at, 1_700_000_999_999);
+    }
+
+    #[test]
+    fn migrates_legacy_favicon_to_site_namespace() {
+        let conn = open_mem();
+        upsert_app_icon(
+            &conn,
+            &AppIcon {
+                app_name: "youtube.com".into(),
+                icon_hash: "favicon-hash".into(),
+                source: "favicon".into(),
+                width: 0,
+                updated_at: 1,
+            },
+        )
+        .expect("insert legacy favicon");
+
+        migrate_legacy_favicon_keys(&conn).expect("migrate favicon");
+
+        assert!(get_app_icon(&conn, "youtube.com").unwrap().is_none());
+        let migrated = get_app_icon(&conn, "site:youtube.com")
+            .unwrap()
+            .expect("migrated favicon");
+        assert_eq!(migrated.icon_hash, "favicon-hash");
     }
 
     #[test]

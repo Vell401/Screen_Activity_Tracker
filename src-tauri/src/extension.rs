@@ -15,6 +15,7 @@ use crate::state::AppState;
 // Встроенные файлы расширения — бейкаются в бинарник на этапе компиляции.
 const MANIFEST_JSON: &str = include_str!("../resources/extension/manifest.json");
 const BACKGROUND_JS: &str = include_str!("../resources/extension/background.js");
+const MEDIA_JS: &str = include_str!("../resources/extension/media.js");
 const POPUP_HTML: &str = include_str!("../resources/extension/popup.html");
 const POPUP_JS: &str = include_str!("../resources/extension/popup.js");
 const INSTALL_TXT: &str = include_str!("../resources/extension/INSTALL.txt");
@@ -44,6 +45,7 @@ pub fn export(dest: &Path) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dest)?;
     std::fs::write(dest.join("manifest.json"), MANIFEST_JSON)?;
     std::fs::write(dest.join("background.js"), BACKGROUND_JS)?;
+    std::fs::write(dest.join("media.js"), MEDIA_JS)?;
     std::fs::write(dest.join("popup.html"), POPUP_HTML)?;
     std::fs::write(dest.join("popup.js"), POPUP_JS)?;
     std::fs::write(dest.join("INSTALL.txt"), INSTALL_TXT)?;

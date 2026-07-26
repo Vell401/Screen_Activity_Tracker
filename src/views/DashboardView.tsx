@@ -80,8 +80,6 @@ export function DashboardView() {
   const appCount = (apps.data ?? []).filter((b) => b.key !== "(unknown)").length;
   const switches = stats.data?.intervals ?? 0;
   const idlePct = totalMs > 0 ? Math.round((idleMs / totalMs) * 100) : 0;
-  // Итог по загруженному списку — для панели подробностей (drill-down).
-  const listTotalMs = list.reduce((s, a) => s + a.durationMs, 0);
 
   // ----- цвета категорий из правил -----
   const catColor = useMemo(() => {
@@ -169,6 +167,21 @@ export function DashboardView() {
     value: string;
   } | null>(null);
 
+  // Итоги для панели подробностей берём из тех же SQL-агрегатов, что и Top
+  // Apps/Domains/категории: они считают весь диапазон и уже исключают простой.
+  // Считать их по `list` нельзя — он обрезан `LIMIT 5000` (видно только свежий
+  // срез), из-за чего цифры в панели расходились бы с бар-листом, из которого
+  // её и открыли.
+  const detailAgg = useMemo(() => {
+    if (!detail) return null;
+    const rows =
+      detail.kind === "app" ? apps.data : detail.kind === "domain" ? domains.data : cats.data;
+    const hit = (rows ?? []).find((b) =>
+      detail.kind === "app" ? appLabel(b.key) === detail.value : b.key === detail.value,
+    );
+    return hit ? { totalMs: hit.totalMs, intervals: hit.count } : null;
+  }, [detail, apps.data, domains.data, cats.data]);
+
   return (
     <>
       <div className="dash">
@@ -243,7 +256,7 @@ export function DashboardView() {
               />
             )}
           </Card>
-          <Card title={t("dash.topDomains")} subtitle={t("dash.topDomainsSub")}>
+          <Card title={t("dash.topDomains")}>
             <BarList
               items={domainBars}
               format={formatDuration}
@@ -308,7 +321,8 @@ export function DashboardView() {
             activities={list}
             from={r.from}
             to={r.to}
-            totalAll={listTotalMs}
+            agg={detailAgg}
+            totalAll={activeMs}
           />
         )}
       </Drawer>
@@ -323,6 +337,7 @@ function DetailBody({
   activities,
   from,
   to,
+  agg,
   totalAll,
 }: {
   kind: "app" | "domain" | "category";
@@ -330,18 +345,24 @@ function DetailBody({
   activities: Activity[];
   from: number;
   to: number;
+  /** Точные итоги из SQL-агрегата (весь диапазон, без простоя). */
+  agg: { totalMs: number; intervals: number } | null;
+  /** Активное время за весь период — знаменатель для доли. */
   totalAll: number;
 }) {
   const t = useT();
+  // Простой отбрасываем везде: и в заголовочных цифрах, и в разбивке ниже —
+  // панель показывает ровно то же активное время, что и Top Apps/Top Domains.
   const filtered = activities.filter((a) => {
+    if (a.isIdle) return false;
     if (kind === "app") return appLabel(a.appName) === value;
     if (kind === "domain") return a.domain === value;
     return a.categoryName === value;
   });
 
-  const total = filtered.reduce((s, a) => s + a.durationMs, 0);
-  const idle = filtered.filter((a) => a.isIdle).reduce((s, a) => s + a.durationMs, 0);
-  const active = total - idle;
+  // Fallback на список — только если ключа почему-то нет в агрегате.
+  const total = agg?.totalMs ?? filtered.reduce((s, a) => s + a.durationMs, 0);
+  const intervals = agg?.intervals ?? filtered.length;
   const share = totalAll > 0 ? Math.round((total / totalAll) * 100) : 0;
 
   // Топ вложенных сущностей: окна (app), страницы (domain), приложения (category).
@@ -370,10 +391,13 @@ function DetailBody({
   return (
     <div className="detail">
       <div className="statgrid detail__stats">
-        <Stat label={t("detail.total")} value={formatDuration(total)} hint={t("detail.totalHint", { p: share })} accent />
-        <Stat label={t("detail.active")} value={formatDuration(active)} />
-        <Stat label={t("detail.idle")} value={formatDuration(idle)} />
-        <Stat label={t("detail.intervals")} value={String(filtered.length)} />
+        <Stat
+          label={t("detail.active")}
+          value={formatDuration(total)}
+          hint={t("detail.totalHint", { p: share })}
+          accent
+        />
+        <Stat label={t("detail.intervals")} value={String(intervals)} />
       </div>
 
       <div className="detail__section">
